@@ -24,15 +24,18 @@ public class PulseSurveyService {
     private final PulseSurveyResponseRepository responseRepository;
     private final EntityMapper mapper;
     private final CurrentUserService currentUser;
+    private final RealtimeEventPublisher events;
 
     public PulseSurveyService(PulseSurveyRepository surveyRepository,
                               PulseSurveyResponseRepository responseRepository,
                               EntityMapper mapper,
-                              CurrentUserService currentUser) {
+                              CurrentUserService currentUser,
+                              RealtimeEventPublisher events) {
         this.surveyRepository = surveyRepository;
         this.responseRepository = responseRepository;
         this.mapper = mapper;
         this.currentUser = currentUser;
+        this.events = events;
     }
 
     public List<PulseSurveyView> list(Long unitId, SurveyStatus status) {
@@ -48,7 +51,9 @@ public class PulseSurveyService {
     @Transactional
     public PulseSurveyView create(PulseSurveyRequest request) {
         currentUser.requireUnitAccess(request.unionUnitId());
-        return toView(surveyRepository.save(mapper.apply(new PulseSurvey(), request)));
+        var saved = surveyRepository.save(mapper.apply(new PulseSurvey(), request));
+        events.changed("surveys", "CREATED", saved.getId(), saved.getUnionUnit().getId());
+        return toView(saved);
     }
 
     @Transactional
@@ -56,7 +61,9 @@ public class PulseSurveyService {
         var survey = findById(id);
         currentUser.requireUnitAccess(survey.getUnionUnit().getId());
         currentUser.requireUnitAccess(request.unionUnitId());
-        return toView(surveyRepository.save(mapper.apply(survey, request)));
+        var saved = surveyRepository.save(mapper.apply(survey, request));
+        events.changed("surveys", "UPDATED", saved.getId(), saved.getUnionUnit().getId());
+        return toView(saved);
     }
 
     @Transactional
@@ -64,6 +71,7 @@ public class PulseSurveyService {
         var survey = findById(id);
         currentUser.requireUnitAccess(survey.getUnionUnit().getId());
         surveyRepository.delete(survey);
+        events.changed("surveys", "DELETED", survey.getId(), survey.getUnionUnit().getId());
     }
 
     public List<PulseSurveyResponse> responses(Long id) {
@@ -94,7 +102,9 @@ public class PulseSurveyService {
         response.setAnonymous(request.anonymous());
         response.setRespondentName(request.anonymous() ? null : request.respondentName().trim());
         response.setSubmittedOn(today);
-        return responseRepository.save(response);
+        var saved = responseRepository.save(response);
+        events.changed("surveys", "RESPONSE_CREATED", survey.getId(), survey.getUnionUnit().getId());
+        return saved;
     }
 
     private PulseSurvey findById(Long id) {

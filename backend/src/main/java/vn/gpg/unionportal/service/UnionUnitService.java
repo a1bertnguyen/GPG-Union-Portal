@@ -17,11 +17,14 @@ public class UnionUnitService {
     private final UnionUnitRepository repository;
     private final EntityMapper mapper;
     private final CurrentUserService currentUser;
+    private final RealtimeEventPublisher events;
 
-    public UnionUnitService(UnionUnitRepository repository, EntityMapper mapper, CurrentUserService currentUser) {
+    public UnionUnitService(UnionUnitRepository repository, EntityMapper mapper, CurrentUserService currentUser,
+                            RealtimeEventPublisher events) {
         this.repository = repository;
         this.mapper = mapper;
         this.currentUser = currentUser;
+        this.events = events;
     }
 
     public List<UnionUnit> list() {
@@ -35,18 +38,24 @@ public class UnionUnitService {
 
     @Transactional
     public UnionUnit create(UnionUnitRequest request) {
-        return repository.save(mapper.apply(new UnionUnit(), request));
+        var saved = repository.save(mapper.apply(new UnionUnit(), request));
+        events.changed("units", "CREATED", saved.getId(), saved.getId());
+        return saved;
     }
 
     @Transactional
     public UnionUnit update(Long id, UnionUnitRequest request) {
         var entity = findById(id);
-        return repository.save(mapper.apply(entity, request));
+        var saved = repository.save(mapper.apply(entity, request));
+        events.changed("units", "UPDATED", saved.getId(), saved.getId());
+        return saved;
     }
 
     @Transactional
     public void delete(Long id) {
-        repository.delete(findById(id));
+        var entity = findById(id);
+        repository.delete(entity);
+        events.changed("units", "DELETED", entity.getId(), entity.getId());
     }
 
     private UnionUnit findById(Long id) {

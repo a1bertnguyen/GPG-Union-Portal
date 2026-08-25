@@ -18,12 +18,14 @@ public class MonthlyReportService {
     private final MonthlyReportRepository repository;
     private final EntityMapper mapper;
     private final CurrentUserService currentUser;
+    private final RealtimeEventPublisher events;
 
     public MonthlyReportService(MonthlyReportRepository repository, EntityMapper mapper,
-                                CurrentUserService currentUser) {
+                                CurrentUserService currentUser, RealtimeEventPublisher events) {
         this.repository = repository;
         this.mapper = mapper;
         this.currentUser = currentUser;
+        this.events = events;
     }
 
     public List<MonthlyReport> list() {
@@ -40,7 +42,10 @@ public class MonthlyReportService {
         var reportMonth = YearMonth.parse(request.month()).atDay(1);
         var entity = repository.findByUnionUnitIdAndReportMonth(request.unionUnitId(), reportMonth)
                 .orElseGet(MonthlyReport::new);
-        return repository.save(mapper.apply(entity, request));
+        boolean creating = entity.getId() == null;
+        var saved = repository.save(mapper.apply(entity, request));
+        events.changed("reports", creating ? "CREATED" : "UPDATED", saved.getId(), saved.getUnionUnit().getId());
+        return saved;
     }
 
     @Transactional
@@ -48,7 +53,9 @@ public class MonthlyReportService {
         var entity = findById(id);
         currentUser.requireUnitAccess(entity.getUnionUnit().getId());
         currentUser.requireUnitAccess(request.unionUnitId());
-        return repository.save(mapper.apply(entity, request));
+        var saved = repository.save(mapper.apply(entity, request));
+        events.changed("reports", "UPDATED", saved.getId(), saved.getUnionUnit().getId());
+        return saved;
     }
 
     @Transactional
@@ -56,6 +63,7 @@ public class MonthlyReportService {
         var entity = findById(id);
         currentUser.requireUnitAccess(entity.getUnionUnit().getId());
         repository.delete(entity);
+        events.changed("reports", "DELETED", entity.getId(), entity.getUnionUnit().getId());
     }
 
     private MonthlyReport findById(Long id) {

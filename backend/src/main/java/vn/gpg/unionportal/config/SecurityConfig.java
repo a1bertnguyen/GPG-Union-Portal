@@ -23,8 +23,11 @@ import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.*;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import vn.gpg.unionportal.repository.AdminUserRepository;
+import vn.gpg.unionportal.security.RaceSafeRateLimiter;
+import vn.gpg.unionportal.security.RateLimitFilter;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
@@ -34,7 +37,10 @@ import java.nio.charset.StandardCharsets;
 @EnableWebSecurity
 public class SecurityConfig {
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtAuthenticationConverter jwtConverter) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http,
+                                                   JwtAuthenticationConverter jwtConverter,
+                                                   RaceSafeRateLimiter rateLimiter,
+                                                   RateLimitProperties rateLimitProperties) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(Customizer.withDefaults())
@@ -46,7 +52,8 @@ public class SecurityConfig {
                                 "/api/auth/me", "/api/dashboard", "/api/units", "/api/members", "/api/members/export.csv",
                                 "/api/welfare", "/api/cases", "/api/activities", "/api/finance",
                                 "/api/finance/summary", "/api/surveys", "/api/engagement",
-                                "/api/reports", "/api/reports/monthly").hasAnyRole("ADMIN", "USER")
+                                "/api/reports", "/api/reports/monthly", "/api/realtime/events")
+                                .hasAnyRole("ADMIN", "USER")
                         .requestMatchers("/api/spreadsheets/units/**", "/api/spreadsheets/users/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/spreadsheets/**").hasAnyRole("ADMIN", "USER")
                         .requestMatchers(HttpMethod.POST, "/api/spreadsheets/**").hasAnyRole("ADMIN", "USER")
@@ -66,8 +73,15 @@ public class SecurityConfig {
                         .authenticationEntryPoint((request, response, exception) -> unauthorized(response)))
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, exception) -> unauthorized(response))
-                        .accessDeniedHandler((request, response, exception) -> forbidden(response)));
+                        .accessDeniedHandler((request, response, exception) -> forbidden(response)))
+                .addFilterAfter(new RateLimitFilter(rateLimiter, rateLimitProperties),
+                        BearerTokenAuthenticationFilter.class);
         return http.build();
+    }
+
+    @Bean
+    public RaceSafeRateLimiter rateLimiter() {
+        return new RaceSafeRateLimiter();
     }
 
     @Bean

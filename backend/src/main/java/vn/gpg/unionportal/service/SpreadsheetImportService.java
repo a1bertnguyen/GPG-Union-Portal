@@ -52,6 +52,7 @@ public class SpreadsheetImportService {
     private final UserAccountService userAccountService;
     private final CurrentUserService currentUser;
     private final Validator validator;
+    private final RealtimeEventPublisher events;
 
     public SpreadsheetImportService(UnionUnitRepository unitRepository,
                                     MemberRepository memberRepository,
@@ -67,7 +68,8 @@ public class SpreadsheetImportService {
                                     EntityMapper mapper,
                                     UserAccountService userAccountService,
                                     CurrentUserService currentUser,
-                                    Validator validator) {
+                                    Validator validator,
+                                    RealtimeEventPublisher events) {
         this.unitRepository = unitRepository;
         this.memberRepository = memberRepository;
         this.welfareRepository = welfareRepository;
@@ -83,6 +85,7 @@ public class SpreadsheetImportService {
         this.userAccountService = userAccountService;
         this.currentUser = currentUser;
         this.validator = validator;
+        this.events = events;
         ZipSecureFile.setMinInflateRatio(0.01d);
     }
 
@@ -152,6 +155,9 @@ public class SpreadsheetImportService {
 
         int successful = created + updated;
         IntegrationRun run = saveRun(resource.integrationType, fileName(file), total, successful, errors);
+        if (successful > 0) {
+            events.changed(resource.path, "BULK_IMPORTED", null, null);
+        }
         return new SpreadsheetImportResult(run, resource.path, created, updated, List.copyOf(errors));
     }
 

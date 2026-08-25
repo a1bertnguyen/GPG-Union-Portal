@@ -108,8 +108,22 @@ Backend được tổ chức theo mô hình MVC phân tầng dưới package `vn
 - `mapper`: chuyển DTO sang entity.
 - `exception`: exception nghiệp vụ và bộ xử lý lỗi dùng chung.
 - `config`: bảo mật, CORS và khởi tạo tài khoản.
+- `security`: rate limiter và các thành phần bảo vệ request.
+- `realtime`: domain event dùng cho luồng SSE.
 
 Cấu hình Spring Boot nằm tại `backend/src/main/resources/application.properties`; cấu hình test nằm tại `backend/src/test/resources/application.properties`. Có thể ghi đè kết nối database bằng `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` và các thiết lập khác bằng những biến môi trường được khai báo trong file này.
+
+## Realtime và rate limit
+
+Client đã đăng nhập có thể mở luồng SSE bằng `GET /api/realtime/events` với JWT trong header `Authorization`. Kết nối nhận event `connected`, sau đó nhận event `change` khi dữ liệu nghiệp vụ được tạo, cập nhật, xóa, nhập CSV/Excel hoặc khi khảo sát có phản hồi mới. Event chỉ được phát sau khi transaction commit; tài khoản `USER` chỉ nhận dữ liệu thuộc CĐCS của mình, còn `ADMIN` nhận toàn hệ thống.
+
+```powershell
+curl.exe -N -H "Authorization: Bearer <access-token>" http://localhost:3638/api/realtime/events
+```
+
+Rate limiter dùng token bucket nguyên tử theo user đã đăng nhập hoặc IP đối với login. Mặc định mỗi cửa sổ 60 giây cho phép 120 API request, 10 lần login và 20 lần kết nối/reconnect SSE. Response luôn có `X-RateLimit-Limit`, `X-RateLimit-Remaining`; khi vượt hạn mức trả `429 RATE_LIMIT_EXCEEDED` kèm `Retry-After`.
+
+Các hạn mức được cấu hình qua `RATE_LIMIT_*`; timeout và heartbeat SSE dùng `REALTIME_*`. Bộ đếm hiện lưu trong từng backend instance. Khi triển khai nhiều backend replica, cần chuyển bucket sang kho dùng chung như Redis với thao tác Lua nguyên tử để giữ cùng hạn mức trên toàn cụm.
 
 ## Nhập dữ liệu từ Excel
 

@@ -20,15 +20,18 @@ public class UserAccountService {
     private final UnionUnitRepository unitRepository;
     private final PasswordEncoder passwordEncoder;
     private final CurrentUserService currentUser;
+    private final RealtimeEventPublisher events;
 
     public UserAccountService(AdminUserRepository repository,
                               UnionUnitRepository unitRepository,
                               PasswordEncoder passwordEncoder,
-                              CurrentUserService currentUser) {
+                              CurrentUserService currentUser,
+                              RealtimeEventPublisher events) {
         this.repository = repository;
         this.unitRepository = unitRepository;
         this.passwordEncoder = passwordEncoder;
         this.currentUser = currentUser;
+        this.events = events;
     }
 
     @Transactional(readOnly = true)
@@ -53,7 +56,9 @@ public class UserAccountService {
         account.setUsername(username);
         account.setPasswordHash(passwordEncoder.encode(request.password()));
         apply(account, request);
-        return toView(repository.save(account));
+        var saved = repository.save(account);
+        events.changed("users", "CREATED", saved.getId(), unitId(saved));
+        return toView(saved);
     }
 
     @Transactional
@@ -80,7 +85,9 @@ public class UserAccountService {
             account.setPasswordHash(passwordEncoder.encode(request.password()));
         }
         apply(account, request);
-        return toView(repository.save(account));
+        var saved = repository.save(account);
+        events.changed("users", "UPDATED", saved.getId(), unitId(saved));
+        return toView(saved);
     }
 
     private void apply(AdminUser account, UserAccountRequest request) {
@@ -105,5 +112,9 @@ public class UserAccountService {
 
     private String normalizeUsername(String username) {
         return username.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private Long unitId(AdminUser account) {
+        return account.getUnionUnit() == null ? null : account.getUnionUnit().getId();
     }
 }

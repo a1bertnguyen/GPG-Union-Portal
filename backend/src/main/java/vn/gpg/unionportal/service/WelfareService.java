@@ -17,11 +17,14 @@ public class WelfareService {
     private final WelfareRecordRepository repository;
     private final EntityMapper mapper;
     private final CurrentUserService currentUser;
+    private final RealtimeEventPublisher events;
 
-    public WelfareService(WelfareRecordRepository repository, EntityMapper mapper, CurrentUserService currentUser) {
+    public WelfareService(WelfareRecordRepository repository, EntityMapper mapper, CurrentUserService currentUser,
+                          RealtimeEventPublisher events) {
         this.repository = repository;
         this.mapper = mapper;
         this.currentUser = currentUser;
+        this.events = events;
     }
 
     public List<WelfareRecord> list(Long unitId) {
@@ -35,7 +38,9 @@ public class WelfareService {
     @Transactional
     public WelfareRecord create(WelfareRequest request) {
         currentUser.requireUnitAccess(request.unionUnitId());
-        return repository.save(mapper.apply(new WelfareRecord(), request));
+        var saved = repository.save(mapper.apply(new WelfareRecord(), request));
+        events.changed("welfare", "CREATED", saved.getId(), saved.getUnionUnit().getId());
+        return saved;
     }
 
     @Transactional
@@ -43,7 +48,9 @@ public class WelfareService {
         var entity = findById(id);
         currentUser.requireUnitAccess(entity.getUnionUnit().getId());
         currentUser.requireUnitAccess(request.unionUnitId());
-        return repository.save(mapper.apply(entity, request));
+        var saved = repository.save(mapper.apply(entity, request));
+        events.changed("welfare", "UPDATED", saved.getId(), saved.getUnionUnit().getId());
+        return saved;
     }
 
     @Transactional
@@ -51,6 +58,7 @@ public class WelfareService {
         var entity = findById(id);
         currentUser.requireUnitAccess(entity.getUnionUnit().getId());
         repository.delete(entity);
+        events.changed("welfare", "DELETED", entity.getId(), entity.getUnionUnit().getId());
     }
 
     private WelfareRecord findById(Long id) {

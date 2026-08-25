@@ -17,11 +17,14 @@ public class LaborCaseService {
     private final LaborCaseRepository repository;
     private final EntityMapper mapper;
     private final CurrentUserService currentUser;
+    private final RealtimeEventPublisher events;
 
-    public LaborCaseService(LaborCaseRepository repository, EntityMapper mapper, CurrentUserService currentUser) {
+    public LaborCaseService(LaborCaseRepository repository, EntityMapper mapper, CurrentUserService currentUser,
+                            RealtimeEventPublisher events) {
         this.repository = repository;
         this.mapper = mapper;
         this.currentUser = currentUser;
+        this.events = events;
     }
 
     public List<LaborCase> list(Long unitId) {
@@ -35,7 +38,9 @@ public class LaborCaseService {
     @Transactional
     public LaborCase create(LaborCaseRequest request) {
         currentUser.requireUnitAccess(request.unionUnitId());
-        return repository.save(mapper.apply(new LaborCase(), request));
+        var saved = repository.save(mapper.apply(new LaborCase(), request));
+        events.changed("cases", "CREATED", saved.getId(), saved.getUnionUnit().getId());
+        return saved;
     }
 
     @Transactional
@@ -43,7 +48,9 @@ public class LaborCaseService {
         var entity = findById(id);
         currentUser.requireUnitAccess(entity.getUnionUnit().getId());
         currentUser.requireUnitAccess(request.unionUnitId());
-        return repository.save(mapper.apply(entity, request));
+        var saved = repository.save(mapper.apply(entity, request));
+        events.changed("cases", "UPDATED", saved.getId(), saved.getUnionUnit().getId());
+        return saved;
     }
 
     @Transactional
@@ -51,6 +58,7 @@ public class LaborCaseService {
         var entity = findById(id);
         currentUser.requireUnitAccess(entity.getUnionUnit().getId());
         repository.delete(entity);
+        events.changed("cases", "DELETED", entity.getId(), entity.getUnionUnit().getId());
     }
 
     private LaborCase findById(Long id) {

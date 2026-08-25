@@ -17,11 +17,14 @@ public class MemberService {
     private final MemberRepository repository;
     private final EntityMapper mapper;
     private final CurrentUserService currentUser;
+    private final RealtimeEventPublisher events;
 
-    public MemberService(MemberRepository repository, EntityMapper mapper, CurrentUserService currentUser) {
+    public MemberService(MemberRepository repository, EntityMapper mapper, CurrentUserService currentUser,
+                         RealtimeEventPublisher events) {
         this.repository = repository;
         this.mapper = mapper;
         this.currentUser = currentUser;
+        this.events = events;
     }
 
     public List<Member> list(Long unitId, String searchText) {
@@ -38,7 +41,9 @@ public class MemberService {
     @Transactional
     public Member create(MemberRequest request) {
         currentUser.requireUnitAccess(request.unionUnitId());
-        return repository.save(mapper.apply(new Member(), request));
+        var saved = repository.save(mapper.apply(new Member(), request));
+        events.changed("members", "CREATED", saved.getId(), saved.getUnionUnit().getId());
+        return saved;
     }
 
     @Transactional
@@ -46,7 +51,9 @@ public class MemberService {
         var entity = findById(id);
         currentUser.requireUnitAccess(entity.getUnionUnit().getId());
         currentUser.requireUnitAccess(request.unionUnitId());
-        return repository.save(mapper.apply(entity, request));
+        var saved = repository.save(mapper.apply(entity, request));
+        events.changed("members", "UPDATED", saved.getId(), saved.getUnionUnit().getId());
+        return saved;
     }
 
     @Transactional
@@ -54,6 +61,7 @@ public class MemberService {
         var entity = findById(id);
         currentUser.requireUnitAccess(entity.getUnionUnit().getId());
         repository.delete(entity);
+        events.changed("members", "DELETED", entity.getId(), entity.getUnionUnit().getId());
     }
 
     private Member findById(Long id) {

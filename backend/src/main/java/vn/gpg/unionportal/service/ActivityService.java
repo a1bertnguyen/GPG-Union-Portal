@@ -17,11 +17,14 @@ public class ActivityService {
     private final UnionActivityRepository repository;
     private final EntityMapper mapper;
     private final CurrentUserService currentUser;
+    private final RealtimeEventPublisher events;
 
-    public ActivityService(UnionActivityRepository repository, EntityMapper mapper, CurrentUserService currentUser) {
+    public ActivityService(UnionActivityRepository repository, EntityMapper mapper, CurrentUserService currentUser,
+                           RealtimeEventPublisher events) {
         this.repository = repository;
         this.mapper = mapper;
         this.currentUser = currentUser;
+        this.events = events;
     }
 
     public List<UnionActivity> list(Long unitId) {
@@ -35,7 +38,9 @@ public class ActivityService {
     @Transactional
     public UnionActivity create(ActivityRequest request) {
         currentUser.requireUnitAccess(request.unionUnitId());
-        return repository.save(mapper.apply(new UnionActivity(), request));
+        var saved = repository.save(mapper.apply(new UnionActivity(), request));
+        events.changed("activities", "CREATED", saved.getId(), saved.getUnionUnit().getId());
+        return saved;
     }
 
     @Transactional
@@ -43,7 +48,9 @@ public class ActivityService {
         var entity = findById(id);
         currentUser.requireUnitAccess(entity.getUnionUnit().getId());
         currentUser.requireUnitAccess(request.unionUnitId());
-        return repository.save(mapper.apply(entity, request));
+        var saved = repository.save(mapper.apply(entity, request));
+        events.changed("activities", "UPDATED", saved.getId(), saved.getUnionUnit().getId());
+        return saved;
     }
 
     @Transactional
@@ -51,6 +58,7 @@ public class ActivityService {
         var entity = findById(id);
         currentUser.requireUnitAccess(entity.getUnionUnit().getId());
         repository.delete(entity);
+        events.changed("activities", "DELETED", entity.getId(), entity.getUnionUnit().getId());
     }
 
     private UnionActivity findById(Long id) {

@@ -36,15 +36,18 @@ public class DataIntegrationService {
     private final FinanceEntryRepository financeRepository;
     private final UnionUnitRepository unitRepository;
     private final IntegrationRunRepository runRepository;
+    private final RealtimeEventPublisher events;
 
     public DataIntegrationService(MemberCsvService memberCsvService,
                                   FinanceEntryRepository financeRepository,
                                   UnionUnitRepository unitRepository,
-                                  IntegrationRunRepository runRepository) {
+                                  IntegrationRunRepository runRepository,
+                                  RealtimeEventPublisher events) {
         this.memberCsvService = memberCsvService;
         this.financeRepository = financeRepository;
         this.unitRepository = unitRepository;
         this.runRepository = runRepository;
+        this.events = events;
     }
 
     public IntegrationImportResult importHr(MultipartFile file, String username) {
@@ -117,6 +120,9 @@ public class DataIntegrationService {
 
         int successful = created + updated;
         var run = saveRun(IntegrationType.FINANCE_IMPORT, fileName(file), total, successful, errors, username);
+        if (successful > 0) {
+            events.changed("finance", "BULK_IMPORTED", null, null);
+        }
         return new IntegrationImportResult(run, created, updated, List.copyOf(errors));
     }
 

@@ -32,10 +32,13 @@ public class MemberCsvService {
 
     private final MemberRepository memberRepository;
     private final UnionUnitRepository unitRepository;
+    private final RealtimeEventPublisher events;
 
-    public MemberCsvService(MemberRepository memberRepository, UnionUnitRepository unitRepository) {
+    public MemberCsvService(MemberRepository memberRepository, UnionUnitRepository unitRepository,
+                            RealtimeEventPublisher events) {
         this.memberRepository = memberRepository;
         this.unitRepository = unitRepository;
+        this.events = events;
     }
 
     public byte[] exportMembers(Long unitId, String query) {
@@ -124,6 +127,9 @@ public class MemberCsvService {
             errors.add("Không thể đọc tệp CSV: " + exception.getMessage());
         }
 
+        if (created + updated > 0) {
+            events.changed("members", "BULK_IMPORTED", null, null);
+        }
         return new MemberImportResult(total, created + updated, created, updated, List.copyOf(errors));
     }
 

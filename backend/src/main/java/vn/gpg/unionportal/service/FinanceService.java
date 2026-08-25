@@ -17,11 +17,14 @@ public class FinanceService {
     private final FinanceEntryRepository repository;
     private final EntityMapper mapper;
     private final CurrentUserService currentUser;
+    private final RealtimeEventPublisher events;
 
-    public FinanceService(FinanceEntryRepository repository, EntityMapper mapper, CurrentUserService currentUser) {
+    public FinanceService(FinanceEntryRepository repository, EntityMapper mapper, CurrentUserService currentUser,
+                          RealtimeEventPublisher events) {
         this.repository = repository;
         this.mapper = mapper;
         this.currentUser = currentUser;
+        this.events = events;
     }
 
     public List<FinanceEntry> list(Long unitId) {
@@ -35,7 +38,9 @@ public class FinanceService {
     @Transactional
     public FinanceEntry create(FinanceRequest request) {
         currentUser.requireUnitAccess(request.unionUnitId());
-        return repository.save(mapper.apply(new FinanceEntry(), request));
+        var saved = repository.save(mapper.apply(new FinanceEntry(), request));
+        events.changed("finance", "CREATED", saved.getId(), saved.getUnionUnit().getId());
+        return saved;
     }
 
     @Transactional
@@ -43,7 +48,9 @@ public class FinanceService {
         var entity = findById(id);
         currentUser.requireUnitAccess(entity.getUnionUnit().getId());
         currentUser.requireUnitAccess(request.unionUnitId());
-        return repository.save(mapper.apply(entity, request));
+        var saved = repository.save(mapper.apply(entity, request));
+        events.changed("finance", "UPDATED", saved.getId(), saved.getUnionUnit().getId());
+        return saved;
     }
 
     @Transactional
@@ -51,6 +58,7 @@ public class FinanceService {
         var entity = findById(id);
         currentUser.requireUnitAccess(entity.getUnionUnit().getId());
         repository.delete(entity);
+        events.changed("finance", "DELETED", entity.getId(), entity.getUnionUnit().getId());
     }
 
     private FinanceEntry findById(Long id) {
