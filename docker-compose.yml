@@ -1,0 +1,59 @@
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: union_portal
+      MYSQL_USER: union_user
+      MYSQL_PASSWORD: union_password
+      MYSQL_ROOT_PASSWORD: root_password
+      TZ: Asia/Bangkok
+    ports:
+      - "3306:3306"
+    volumes:
+      - union_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot_password"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  backend:
+    build: ./backend
+    environment:
+      SERVER_PORT: 3638
+      DB_URL: jdbc:mysql://mysql:3306/union_portal?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Bangkok
+      DB_USERNAME: union_user
+      DB_PASSWORD: union_password
+      CORS_ALLOWED_ORIGIN: http://localhost:3637
+      JWT_SECRET: ${JWT_SECRET:-local-dev-only-change-this-jwt-secret-2026-gpg-union-portal}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@123!}
+      ADMIN_FULL_NAME: ${ADMIN_FULL_NAME:-Quản trị viên GPG}
+      USER_USERNAME: ${USER_USERNAME:-user.vcs}
+      USER_PASSWORD: ${USER_PASSWORD:-User@123!}
+      USER_FULL_NAME: ${USER_FULL_NAME:-Cán bộ CĐCS VCS}
+      USER_UNIT_CODE: ${USER_UNIT_CODE:-VCS}
+      TZ: Asia/Bangkok
+    ports:
+      - "3638:3638"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3638/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 25s
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3637:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  union_mysql_data:

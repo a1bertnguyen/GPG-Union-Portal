@@ -1,0 +1,25 @@
+package vn.gpg.unionportal.model;
+
+public final class DomainEnums {
+    private DomainEnums() {
+    }
+
+    public enum LegalStatus { ACTIVE, INACTIVE }
+    public enum MembershipStatus { MEMBER, NOT_JOINED, LEFT }
+    public enum EmploymentStatus { ACTIVE, INACTIVE }
+    public enum WelfareType { BIRTHDAY, FUNERAL, WEDDING, VISIT, CHILDBIRTH, HARDSHIP }
+    public enum WorkStatus { NEW, PENDING_APPROVAL, IN_PROGRESS, COMPLETED, CANCELLED }
+    public enum DocumentStatus { COMPLETE, INCOMPLETE, NOT_REQUIRED }
+    public enum CaseSeverity { LOW, MEDIUM, HIGH, CRITICAL }
+    public enum CaseStatus { NEW, VERIFYING, IN_PROGRESS, WAITING_RESPONSE, CLOSED }
+    public enum ActivityStatus { PLANNED, APPROVED, IN_PROGRESS, COMPLETED, CANCELLED }
+    public enum FinanceEntryType { INCOME, EXPENSE }
+    public enum ReportStatus { DRAFT, SUBMITTED, APPROVED }
+    public enum SurveyStatus { DRAFT, ACTIVE, CLOSED }
+    public enum IntegrationType {
+        HR_IMPORT, FINANCE_IMPORT,
+        UNITS_IMPORT, MEMBERS_IMPORT, WELFARE_IMPORT, CASES_IMPORT, ACTIVITIES_IMPORT,
+        FINANCE_EXCEL_IMPORT, SURVEYS_IMPORT, SURVEY_RESPONSES_IMPORT, REPORTS_IMPORT, USERS_IMPORT
+    }
+    public enum IntegrationStatus { COMPLETED, PARTIAL, FAILED }
+}

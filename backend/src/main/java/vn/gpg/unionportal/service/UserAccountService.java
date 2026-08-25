@@ -1,0 +1,109 @@
+package vn.gpg.unionportal.service;
+
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import vn.gpg.unionportal.exception.ResourceNotFoundException;
+import vn.gpg.unionportal.model.AdminUser;
+import vn.gpg.unionportal.repository.AdminUserRepository;
+import vn.gpg.unionportal.repository.UnionUnitRepository;
+import vn.gpg.unionportal.dto.UserAccountModels.UserAccountRequest;
+import vn.gpg.unionportal.dto.UserAccountModels.UserAccountView;
+
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
+
+@Service
+public class UserAccountService {
+    private final AdminUserRepository repository;
+    private final UnionUnitRepository unitRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final CurrentUserService currentUser;
+
+    public UserAccountService(AdminUserRepository repository,
+                              UnionUnitRepository unitRepository,
+                              PasswordEncoder passwordEncoder,
+                              CurrentUserService currentUser) {
+        this.repository = repository;
+        this.unitRepository = unitRepository;
+        this.passwordEncoder = passwordEncoder;
+        this.currentUser = currentUser;
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserAccountView> list() {
+        return repository.findAll().stream()
+                .sorted(Comparator.comparing(AdminUser::getRole).thenComparing(AdminUser::getUsername))
+                .map(this::toView)
+                .toList();
+    }
+
+    @Transactional
+    public UserAccountView create(UserAccountRequest request) {
+        String username = normalizeUsername(request.username());
+        if (repository.existsByUsernameIgnoreCase(username)) {
+            throw new IllegalArgumentException("Tên đăng nhập đã tồn tại");
+        }
+        if (request.password() == null || request.password().isBlank()) {
+            throw new IllegalArgumentException("Mật khẩu khởi tạo không được để trống");
+        }
+
+        var account = new AdminUser();
+        account.setUsername(username);
+        account.setPasswordHash(passwordEncoder.encode(request.password()));
+        apply(account, request);
+        return toView(repository.save(account));
+    }
+
+    @Transactional
+    public UserAccountView update(Long id, UserAccountRequest request) {
+        var account = repository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tài khoản với id=" + id));
+        String username = normalizeUsername(request.username());
+        repository.findByUsernameIgnoreCase(username)
+                .filter(existing -> !existing.getId().equals(id))
+                .ifPresent(existing -> { throw new IllegalArgumentException("Tên đăng nhập đã tồn tại"); });
+
+        boolean editingSelf = account.getUsername().equalsIgnoreCase(currentUser.username());
+        if (editingSelf && (!request.active() || !"ADMIN".equals(request.role()))) {
+            throw new IllegalArgumentException("Không thể khóa hoặc hạ quyền tài khoản ADMIN đang đăng nhập");
+        }
+        if ("ADMIN".equals(account.getRole()) && account.getActive()
+                && (!request.active() || !"ADMIN".equals(request.role()))
+                && repository.countByRoleAndActiveTrue("ADMIN") <= 1) {
+            throw new IllegalArgumentException("Hệ thống phải còn ít nhất một ADMIN đang hoạt động");
+        }
+
+        account.setUsername(username);
+        if (request.password() != null && !request.password().isBlank()) {
+            account.setPasswordHash(passwordEncoder.encode(request.password()));
+        }
+        apply(account, request);
+        return toView(repository.save(account));
+    }
+
+    private void apply(AdminUser account, UserAccountRequest request) {
+        account.setFullName(request.fullName().trim());
+        account.setRole(request.role());
+        account.setActive(request.active());
+        if ("USER".equals(request.role())) {
+            if (request.unionUnitId() == null) throw new IllegalArgumentException("Tài khoản USER phải được gán CĐCS");
+            account.setUnionUnit(unitRepository.findById(request.unionUnitId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy CĐCS với id=" + request.unionUnitId())));
+        } else {
+            account.setUnionUnit(null);
+        }
+    }
+
+    private UserAccountView toView(AdminUser account) {
+        var unit = account.getUnionUnit();
+        return new UserAccountView(account.getId(), account.getUsername(), account.getFullName(), account.getRole(),
+                account.getActive(), unit == null ? null : unit.getId(), unit == null ? null : unit.getCode(),
+                unit == null ? null : unit.getName(), account.getLastLoginAt(), account.getCreatedAt());
+    }
+
+    private String normalizeUsername(String username) {
+        return username.trim().toLowerCase(Locale.ROOT);
+    }
+}
