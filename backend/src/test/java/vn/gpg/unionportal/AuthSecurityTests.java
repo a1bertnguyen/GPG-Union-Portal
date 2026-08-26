@@ -65,6 +65,28 @@ class AuthSecurityTests {
     }
 
     @Test
+    void newestLoginInvalidatesThePreviousSession() throws Exception {
+        var firstLogin = authService.login(new LoginRequest("admin", "Admin@123!"));
+        var firstRequest = HttpRequest.newBuilder(uri("/api/auth/me"))
+                .header("Authorization", "Bearer " + firstLogin.accessToken()).GET().build();
+        assertThat(httpClient.send(firstRequest, HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(200);
+
+        var secondLogin = authService.login(new LoginRequest("admin", "Admin@123!"));
+        var secondJwt = jwtDecoder.decode(secondLogin.accessToken());
+
+        var replacedResponse = httpClient.send(firstRequest, HttpResponse.BodyHandlers.ofString());
+        assertThat(replacedResponse.statusCode()).isEqualTo(401);
+        assertThat(replacedResponse.body())
+                .contains("SESSION_REPLACED")
+                .contains("Tài khoản đã được đăng nhập ở thiết bị khác");
+
+        var currentRequest = HttpRequest.newBuilder(uri("/api/auth/me"))
+                .header("Authorization", "Bearer " + secondLogin.accessToken()).GET().build();
+        assertThat(httpClient.send(currentRequest, HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(200);
+        assertThat(adminUserRepository.findActiveTokenId("admin")).contains(secondJwt.getId());
+    }
+
+    @Test
     void protectsBusinessApiAndAcceptsBearerToken() throws Exception {
         var anonymousRequest = HttpRequest.newBuilder(uri("/api/units")).GET().build();
         var anonymousResponse = httpClient.send(anonymousRequest, HttpResponse.BodyHandlers.ofString());

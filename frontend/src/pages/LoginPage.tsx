@@ -3,9 +3,12 @@ import { api } from '../api'
 import { saveSession, type AuthSession } from '../auth'
 import { loadPortalApp } from '../portalLoader'
 
-type Props = { onLogin: (session: AuthSession) => void }
+type Props = {
+  notice?: string
+  onLogin: (session: AuthSession) => void
+}
 
-export default function LoginPage({ onLogin }: Props) {
+export default function LoginPage({ notice, onLogin }: Props) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -47,7 +50,8 @@ export default function LoginPage({ onLogin }: Props) {
           <p className="login-intro">Sử dụng tài khoản ADMIN hoặc USER đã được cấp.</p>
           <label className="field"><span>Tên đăng nhập</span><input autoFocus required autoComplete="username" value={username} onChange={event => setUsername(event.target.value)} placeholder="Nhập tên đăng nhập" /></label>
           <label className="field"><span>Mật khẩu</span><div className="password-field"><input required type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Nhập mật khẩu" /><button type="button" onClick={() => setShowPassword(value => !value)}>{showPassword ? 'Ẩn' : 'Hiện'}</button></div></label>
-          {error && <div className="alert alert--danger login-error">{error}</div>}
+          {notice && <div className="alert alert--danger login-error" role="alert">{notice}</div>}
+          {error && <div className="alert alert--danger login-error" role="alert">{error}</div>}
           <button className="button button--primary login-submit" disabled={loading}>{loading ? 'Đang xác thực…' : 'Đăng nhập'}</button>
           <small className="login-help">Nếu quên mật khẩu, liên hệ quản trị hệ thống GPG.</small>
         </form>

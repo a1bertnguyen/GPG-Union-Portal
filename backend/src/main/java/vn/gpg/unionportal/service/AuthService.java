@@ -12,6 +12,7 @@ import vn.gpg.unionportal.dto.AuthModels.LoginResponse;
 
 import java.time.Instant;
 import java.util.Locale;
+import java.util.UUID;
 
 @Service
 public class AuthService {
@@ -34,9 +35,11 @@ public class AuthService {
                 UsernamePasswordAuthenticationToken.unauthenticated(username, request.password()));
         var admin = repository.findByUsernameIgnoreCase(username)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy tài khoản quản trị"));
+        String tokenId = UUID.randomUUID().toString();
         admin.setLastLoginAt(Instant.now());
+        admin.setActiveTokenId(tokenId);
         repository.save(admin);
-        var token = tokenService.issue(admin);
+        var token = tokenService.issue(admin, tokenId);
         var unit = admin.getUnionUnit();
         return new LoginResponse(token.value(), "Bearer", token.expiresAt(),
                 new AdminProfile(admin.getId(), admin.getUsername(), admin.getFullName(), admin.getRole(),

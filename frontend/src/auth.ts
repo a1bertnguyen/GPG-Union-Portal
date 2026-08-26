@@ -46,7 +46,7 @@ export function clearSession() {
   sessionStorage.removeItem(SESSION_KEY)
 }
 
-export function notifyAuthExpired() {
+export function notifyAuthExpired(message?: string) {
   clearSession()
-  window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+  window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT, { detail: { message } }))
 }

@@ -12,6 +12,21 @@ export class ApiError extends Error {
 
 export const apiUrl = (path: string) => `${API_BASE}${path}`
 
+type ApiErrorPayload = { code?: string; message?: string }
+
+const readApiError = async (response: Response): Promise<ApiErrorPayload> => {
+  try {
+    return await response.json() as ApiErrorPayload
+  } catch {
+    return {}
+  }
+}
+
+const handleUnauthorized = (response: Response, path: string, payload: ApiErrorPayload) => {
+  if (response.status !== 401 || path === '/auth/login') return
+  notifyAuthExpired(payload.code === 'SESSION_REPLACED' ? payload.message : undefined)
+}
+
 export async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers)
   const accessToken = getAccessToken()
@@ -25,16 +40,10 @@ export async function api<T>(path: string, options?: RequestInit): Promise<T> {
     headers,
   })
 
-  if (response.status === 401 && path !== '/auth/login') notifyAuthExpired()
-
   if (!response.ok) {
-    let message = `Yêu cầu thất bại (${response.status})`
-    try {
-      const body = await response.json() as { message?: string }
-      if (body.message) message = body.message
-    } catch {
-      // Server did not return JSON.
-    }
+    const payload = await readApiError(response)
+    handleUnauthorized(response, path, payload)
+    const message = payload.message ?? `Yêu cầu thất bại (${response.status})`
     throw new ApiError(message)
   }
 
@@ -79,8 +88,11 @@ export async function downloadFile(path: string, filename: string) {
   const accessToken = getAccessToken()
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
   const response = await fetch(apiUrl(path), { headers })
-  if (response.status === 401) notifyAuthExpired()
-  if (!response.ok) throw new ApiError(`Không thể tải tệp (${response.status})`)
+  if (!response.ok) {
+    const payload = await readApiError(response)
+    handleUnauthorized(response, path, payload)
+    throw new ApiError(payload.message ?? `Không thể tải tệp (${response.status})`)
+  }
   const url = URL.createObjectURL(await response.blob())
   const link = document.createElement('a')
   link.href = url
@@ -94,8 +106,11 @@ export async function loadFileUrl(path: string) {
   const accessToken = getAccessToken()
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
   const response = await fetch(apiUrl(path), { headers })
-  if (response.status === 401) notifyAuthExpired()
-  if (!response.ok) throw new ApiError(`Không thể tải nội dung tệp (${response.status})`)
+  if (!response.ok) {
+    const payload = await readApiError(response)
+    handleUnauthorized(response, path, payload)
+    throw new ApiError(payload.message ?? `Không thể tải nội dung tệp (${response.status})`)
+  }
   return URL.createObjectURL(await response.blob())
 }
 

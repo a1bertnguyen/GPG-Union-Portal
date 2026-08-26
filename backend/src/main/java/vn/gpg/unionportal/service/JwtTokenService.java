@@ -12,7 +12,6 @@ import vn.gpg.unionportal.model.AdminUser;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.UUID;
 
 @Service
 public class JwtTokenService {
@@ -28,7 +27,7 @@ public class JwtTokenService {
         this.accessTokenTtl = Duration.ofMinutes(accessTokenMinutes);
     }
 
-    public IssuedToken issue(AdminUser admin) {
+    public IssuedToken issue(AdminUser admin, String tokenId) {
         Instant now = Instant.now();
         Instant expiresAt = now.plus(accessTokenTtl);
         var header = JwsHeader.with(MacAlgorithm.HS256).type("JWT").build();
@@ -37,7 +36,7 @@ public class JwtTokenService {
                 .issuedAt(now)
                 .expiresAt(expiresAt)
                 .subject(admin.getUsername())
-                .id(UUID.randomUUID().toString())
+                .id(tokenId)
                 .claim("name", admin.getFullName())
                 .claim("roles", List.of(admin.getRole()));
         if (admin.getUnionUnit() != null) {

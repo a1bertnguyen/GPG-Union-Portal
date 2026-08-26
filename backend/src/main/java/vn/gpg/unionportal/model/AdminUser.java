@@ -38,4 +38,7 @@ public class AdminUser extends BaseEntity {
 
     @Column(name = "last_login_at")
     private Instant lastLoginAt;
+
+    @Column(name = "active_token_id", length = 36)
+    private String activeTokenId;
 }

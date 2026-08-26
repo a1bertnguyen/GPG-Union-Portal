@@ -28,6 +28,7 @@ import org.springframework.security.web.SecurityFilterChain;
 import vn.gpg.unionportal.repository.AdminUserRepository;
 import vn.gpg.unionportal.security.RaceSafeRateLimiter;
 import vn.gpg.unionportal.security.RateLimitFilter;
+import vn.gpg.unionportal.security.ActiveSessionFilter;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
@@ -40,7 +41,9 @@ public class SecurityConfig {
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                    JwtAuthenticationConverter jwtConverter,
                                                    RaceSafeRateLimiter rateLimiter,
-                                                   RateLimitProperties rateLimitProperties) throws Exception {
+                                                   RateLimitProperties rateLimitProperties,
+                                                   AdminUserRepository repository) throws Exception {
+        var activeSessionFilter = new ActiveSessionFilter(repository);
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(Customizer.withDefaults())
@@ -89,8 +92,8 @@ public class SecurityConfig {
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint((request, response, exception) -> unauthorized(response))
                         .accessDeniedHandler((request, response, exception) -> forbidden(response)))
-                .addFilterAfter(new RateLimitFilter(rateLimiter, rateLimitProperties),
-                        BearerTokenAuthenticationFilter.class);
+                .addFilterAfter(activeSessionFilter, BearerTokenAuthenticationFilter.class)
+                .addFilterAfter(new RateLimitFilter(rateLimiter, rateLimitProperties), ActiveSessionFilter.class);
         return http.build();
     }
 
