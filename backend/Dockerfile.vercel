@@ -6,7 +6,10 @@ RUN mvn -q package
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
+RUN apk add --no-cache socat
 COPY --from=build /app/target/union-portal-0.0.1-SNAPSHOT.jar app.jar
-ENV SERVER_PORT=80
+COPY vercel-entrypoint.sh /app/vercel-entrypoint.sh
+RUN sed -i 's/\r$//' /app/vercel-entrypoint.sh && chmod +x /app/vercel-entrypoint.sh
+ENV SERVER_PORT=8080
 EXPOSE 80
-CMD ["/opt/java/openjdk/bin/java", "-jar", "/app/app.jar"]
+CMD ["/app/vercel-entrypoint.sh"]
