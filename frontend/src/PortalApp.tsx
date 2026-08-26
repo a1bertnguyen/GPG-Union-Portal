@@ -210,7 +210,7 @@ export default function PortalApp({ session, onLogout }: Props) {
     if (!session) return
     // Every CĐCS dropdown in the app reads this list, so ask for the whole set rather than a page.
     apiAll<UnionUnit>('/units').then(setUnits).catch(() => setUnits([]))
-  }, [active, session])
+  }, [session])
 
   useEffect(() => {
     if (!session) return
