@@ -8,7 +8,7 @@ services:
       MYSQL_ROOT_PASSWORD: root_password
       TZ: Asia/Bangkok
     ports:
-      - "3306:3306"
+      - "${MYSQL_HOST_PORT:-3307}:3306"
     volumes:
       - union_mysql_data:/var/lib/mysql
     healthcheck:
