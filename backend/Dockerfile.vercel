@@ -9,4 +9,4 @@ WORKDIR /app
 COPY --from=build /app/target/union-portal-0.0.1-SNAPSHOT.jar app.jar
 ENV SERVER_PORT=80
 EXPOSE 80
-CMD ["java", "-jar", "/app/app.jar"]
+CMD ["/opt/java/openjdk/bin/java", "-jar", "/app/app.jar"]
