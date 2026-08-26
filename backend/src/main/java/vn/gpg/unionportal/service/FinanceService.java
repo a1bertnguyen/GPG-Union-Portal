@@ -1,38 +1,82 @@
 package vn.gpg.unionportal.service;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.gpg.unionportal.dto.ApiModels.FinanceRequest;
+import vn.gpg.unionportal.dto.ApiModels.ListFacets;
+import vn.gpg.unionportal.dto.ListQuery;
 import vn.gpg.unionportal.exception.ResourceNotFoundException;
 import vn.gpg.unionportal.mapper.EntityMapper;
+import vn.gpg.unionportal.model.DomainEnums.DocumentStatus;
+import vn.gpg.unionportal.model.DomainEnums.FinanceEntryType;
 import vn.gpg.unionportal.model.FinanceEntry;
 import vn.gpg.unionportal.repository.FinanceEntryRepository;
+import vn.gpg.unionportal.spec.FinanceSpecs;
+import vn.gpg.unionportal.spec.SpecAggregates;
+import vn.gpg.unionportal.spec.Specs;
 
-import java.util.Comparator;
+import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @Transactional(readOnly = true)
 public class FinanceService {
+    private static final Sort SORT = Sort.by(Sort.Direction.DESC, "transactionDate");
+
     private final FinanceEntryRepository repository;
     private final EntityMapper mapper;
     private final CurrentUserService currentUser;
     private final RealtimeEventPublisher events;
+    private final SpecAggregates aggregates;
 
     public FinanceService(FinanceEntryRepository repository, EntityMapper mapper, CurrentUserService currentUser,
-                          RealtimeEventPublisher events) {
+                          RealtimeEventPublisher events, SpecAggregates aggregates) {
         this.repository = repository;
         this.mapper = mapper;
         this.currentUser = currentUser;
         this.events = events;
+        this.aggregates = aggregates;
     }
 
-    public List<FinanceEntry> list(Long unitId) {
-        Long scopedUnitId = currentUser.scopedUnitId(unitId);
-        return repository.findAll().stream()
-                .filter(item -> scopedUnitId == null || item.getUnionUnit().getId().equals(scopedUnitId))
-                .sorted(Comparator.comparing(FinanceEntry::getTransactionDate).reversed())
-                .toList();
+    public Page<FinanceEntry> page(ListQuery query) {
+        return repository.findAll(Specs.nullSafe(filter(query)), query.pageable(SORT));
+    }
+
+    public List<FinanceEntry> search(ListQuery query) {
+        return repository.findAll(Specs.nullSafe(filter(query)), SORT);
+    }
+
+    public ListFacets facets(ListQuery query) {
+        Specification<FinanceEntry> scope = Specs.nullSafe(Specs.unitScope(scopedUnitId(query)));
+        Specification<FinanceEntry> filtered = Specs.nullSafe(filter(query));
+        BigDecimal income = aggregates.sum(FinanceEntry.class,
+                filtered.and(Specs.eq("entryType", FinanceEntryType.INCOME)), "amount");
+        BigDecimal expense = aggregates.sum(FinanceEntry.class,
+                filtered.and(Specs.eq("entryType", FinanceEntryType.EXPENSE)), "amount");
+        Map<String, Number> metrics = new LinkedHashMap<>();
+        metrics.put("total", repository.count(filtered));
+        metrics.put("income", income);
+        metrics.put("expense", expense);
+        metrics.put("balance", income.subtract(expense));
+        metrics.put("incompleteDocuments", repository.count(filtered.and(
+                Specs.eq("documentStatus", DocumentStatus.INCOMPLETE))));
+        return new ListFacets(
+                repository.count(scope),
+                aggregates.distinctValues(FinanceEntry.class, scope, "entryType"),
+                metrics);
+    }
+
+    private Specification<FinanceEntry> filter(ListQuery query) {
+        return FinanceSpecs.filter(query, scopedUnitId(query));
+    }
+
+    private Long scopedUnitId(ListQuery query) {
+        return currentUser.scopedUnitId(query.unitId());
     }
 
     @Transactional

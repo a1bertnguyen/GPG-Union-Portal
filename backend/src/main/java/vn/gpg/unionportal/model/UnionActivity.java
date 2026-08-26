@@ -48,15 +48,34 @@ public class UnionActivity extends BaseEntity {
     @Column(name = "participant_count", nullable = false)
     private Integer participantCount;
 
+    @Column(name = "participant_list", length = 2000)
+    private String participantList;
+
+    @Column(name = "check_in_count", nullable = false)
+    private Integer checkInCount;
+
     @Column(name = "usefulness_score", precision = 3, scale = 2)
     private BigDecimal usefulnessScore;
 
+    @Column(name = "quick_feedback", length = 2000)
+    private String quickFeedback;
+
+    @Column(length = 2000)
+    private String issues;
+
     @Column(name = "report_completed", nullable = false)
     private Boolean reportCompleted;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "document_status", nullable = false, length = 30)
+    private vn.gpg.unionportal.model.DomainEnums.DocumentStatus documentStatus;
 
     @Column(name = "follow_up_owner", length = 150)
     private String followUpOwner;
 
     @Column(name = "follow_up_deadline")
     private LocalDate followUpDeadline;
+
+    @Column(name = "lessons_learned", length = 2000)
+    private String lessonsLearned;
 }

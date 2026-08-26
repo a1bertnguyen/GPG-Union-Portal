@@ -5,13 +5,15 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import vn.gpg.unionportal.dto.ApiModels.ListFacets;
+import vn.gpg.unionportal.dto.ApiModels.PageResponse;
+import vn.gpg.unionportal.dto.ListQuery;
 import vn.gpg.unionportal.model.IntegrationRun;
 import vn.gpg.unionportal.service.CurrentUserService;
 import vn.gpg.unionportal.service.DataIntegrationService;
 import vn.gpg.unionportal.dto.ApiModels.IntegrationImportResult;
 
 import java.time.YearMonth;
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/integrations")
@@ -25,8 +27,13 @@ public class IntegrationController {
     }
 
     @GetMapping("/runs")
-    public List<IntegrationRun> runs() {
-        return integrationService.listRuns();
+    public PageResponse<IntegrationRun> runs(@ModelAttribute ListQuery query) {
+        return PageResponse.from(query, integrationService::pageRuns, integrationService::searchRuns);
+    }
+
+    @GetMapping("/runs/facets")
+    public ListFacets runFacets(@ModelAttribute ListQuery query) {
+        return integrationService.runFacets(query);
     }
 
     @PostMapping(value = "/hr/import.csv", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)

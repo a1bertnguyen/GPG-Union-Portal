@@ -1,8 +1,13 @@
 package vn.gpg.unionportal.service;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+import vn.gpg.unionportal.dto.ApiModels.ListFacets;
+import vn.gpg.unionportal.dto.ListQuery;
 import vn.gpg.unionportal.model.DomainEnums.DocumentStatus;
 import vn.gpg.unionportal.model.DomainEnums.FinanceEntryType;
 import vn.gpg.unionportal.model.DomainEnums.IntegrationStatus;
@@ -13,6 +18,9 @@ import vn.gpg.unionportal.repository.FinanceEntryRepository;
 import vn.gpg.unionportal.repository.IntegrationRunRepository;
 import vn.gpg.unionportal.repository.UnionUnitRepository;
 import vn.gpg.unionportal.dto.ApiModels.IntegrationImportResult;
+import vn.gpg.unionportal.spec.IntegrationRunSpecs;
+import vn.gpg.unionportal.spec.SpecAggregates;
+import vn.gpg.unionportal.spec.Specs;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -28,6 +36,7 @@ import java.util.*;
 @Service
 public class DataIntegrationService {
     private static final long MAX_FILE_SIZE = 5 * 1024 * 1024;
+    private static final Sort RUN_SORT = Sort.by(Sort.Direction.DESC, "createdAt");
     private static final List<String> FINANCE_HEADERS = List.of(
             "entryCode", "unitCode", "transactionDate", "entryType", "category", "amount",
             "description", "documentNumber", "documentStatus");
@@ -37,17 +46,20 @@ public class DataIntegrationService {
     private final UnionUnitRepository unitRepository;
     private final IntegrationRunRepository runRepository;
     private final RealtimeEventPublisher events;
+    private final SpecAggregates aggregates;
 
     public DataIntegrationService(MemberCsvService memberCsvService,
                                   FinanceEntryRepository financeRepository,
                                   UnionUnitRepository unitRepository,
                                   IntegrationRunRepository runRepository,
-                                  RealtimeEventPublisher events) {
+                                  RealtimeEventPublisher events,
+                                  SpecAggregates aggregates) {
         this.memberCsvService = memberCsvService;
         this.financeRepository = financeRepository;
         this.unitRepository = unitRepository;
         this.runRepository = runRepository;
         this.events = events;
+        this.aggregates = aggregates;
     }
 
     public IntegrationImportResult importHr(MultipartFile file, String username) {
@@ -143,9 +155,31 @@ public class DataIntegrationService {
 
     @Transactional(readOnly = true)
     public List<IntegrationRun> listRuns() {
-        return runRepository.findAll().stream()
-                .sorted(Comparator.comparing(IntegrationRun::getCreatedAt).reversed())
-                .toList();
+        return runRepository.findAll(Specs.<IntegrationRun>matchAll(), RUN_SORT);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<IntegrationRun> pageRuns(ListQuery query) {
+        return runRepository.findAll(Specs.nullSafe(IntegrationRunSpecs.filter(query)), query.pageable(RUN_SORT));
+    }
+
+    @Transactional(readOnly = true)
+    public List<IntegrationRun> searchRuns(ListQuery query) {
+        return runRepository.findAll(Specs.nullSafe(IntegrationRunSpecs.filter(query)), RUN_SORT);
+    }
+
+    @Transactional(readOnly = true)
+    public ListFacets runFacets(ListQuery query) {
+        Specification<IntegrationRun> filtered = Specs.nullSafe(IntegrationRunSpecs.filter(query));
+        Map<String, Number> metrics = new LinkedHashMap<>();
+        metrics.put("total", runRepository.count(filtered));
+        metrics.put("completed", runRepository.count(filtered.and(Specs.eq("status", IntegrationStatus.COMPLETED))));
+        metrics.put("partial", runRepository.count(filtered.and(Specs.eq("status", IntegrationStatus.PARTIAL))));
+        metrics.put("failed", runRepository.count(filtered.and(Specs.eq("status", IntegrationStatus.FAILED))));
+        return new ListFacets(
+                runRepository.count(),
+                aggregates.distinctValues(IntegrationRun.class, Specs.matchAll(), "status"),
+                metrics);
     }
 
     private IntegrationRun saveRun(IntegrationType type, String fileName, int total, int successful,

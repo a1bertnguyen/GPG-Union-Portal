@@ -28,6 +28,9 @@ public class WelfareRecord extends BaseEntity {
     @Column(name = "welfare_type", nullable = false, length = 30)
     private WelfareType welfareType;
 
+    @Column(name = "policy_name", length = 180)
+    private String policyName;
+
     @ManyToOne(fetch = FetchType.EAGER, optional = false)
     @JoinColumn(name = "union_unit_id", nullable = false)
     private UnionUnit unionUnit;
@@ -38,6 +41,9 @@ public class WelfareRecord extends BaseEntity {
     @Column(name = "event_date", nullable = false)
     private LocalDate eventDate;
 
+    @Column
+    private LocalDate deadline;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private WorkStatus status;
@@ -45,9 +51,19 @@ public class WelfareRecord extends BaseEntity {
     @Column(nullable = false, precision = 15, scale = 2)
     private BigDecimal amount;
 
+    @Column(name = "standard_amount", precision = 15, scale = 2)
+    private BigDecimal standardAmount;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "document_status", nullable = false, length = 30)
     private DocumentStatus documentStatus;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "receipt_status", nullable = false, length = 30)
+    private DocumentStatus receiptStatus;
+
+    @Column(name = "has_image", nullable = false)
+    private Boolean hasImage;
 
     @Column(length = 1000)
     private String notes;

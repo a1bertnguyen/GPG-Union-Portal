@@ -4,10 +4,11 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import vn.gpg.unionportal.dto.ApiModels.ActivityRequest;
+import vn.gpg.unionportal.dto.ApiModels.ListFacets;
+import vn.gpg.unionportal.dto.ApiModels.PageResponse;
+import vn.gpg.unionportal.dto.ListQuery;
 import vn.gpg.unionportal.model.UnionActivity;
 import vn.gpg.unionportal.service.ActivityService;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/activities")
@@ -19,8 +20,13 @@ public class ActivityController {
     }
 
     @GetMapping
-    public List<UnionActivity> list(@RequestParam(required = false) Long unitId) {
-        return service.list(unitId);
+    public PageResponse<UnionActivity> list(@ModelAttribute ListQuery query) {
+        return PageResponse.from(query, service::page, service::search);
+    }
+
+    @GetMapping("/facets")
+    public ListFacets facets(@ModelAttribute ListQuery query) {
+        return service.facets(query);
     }
 
     @PostMapping

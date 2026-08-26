@@ -29,6 +29,12 @@ public class LaborCase extends BaseEntity {
     @JoinColumn(name = "union_unit_id", nullable = false)
     private UnionUnit unionUnit;
 
+    @Column(name = "requester_name", nullable = false, length = 150)
+    private String requesterName;
+
+    @Column(length = 120)
+    private String source;
+
     @Column(name = "issue_group", nullable = false, length = 120)
     private String issueGroup;
 
@@ -51,6 +57,9 @@ public class LaborCase extends BaseEntity {
 
     @Column(name = "affected_people", nullable = false)
     private Integer affectedPeople;
+
+    @Column(name = "attachment_note", length = 500)
+    private String attachmentNote;
 
     @Column(name = "result_text", length = 2000)
     private String resultText;

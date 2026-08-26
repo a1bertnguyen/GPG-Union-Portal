@@ -11,7 +11,7 @@ public final class DomainEnums {
     public enum WorkStatus { NEW, PENDING_APPROVAL, IN_PROGRESS, COMPLETED, CANCELLED }
     public enum DocumentStatus { COMPLETE, INCOMPLETE, NOT_REQUIRED }
     public enum CaseSeverity { LOW, MEDIUM, HIGH, CRITICAL }
-    public enum CaseStatus { NEW, VERIFYING, IN_PROGRESS, WAITING_RESPONSE, CLOSED }
+    public enum CaseStatus { NEW, VERIFYING, CLASSIFYING, ASSIGNED, IN_PROGRESS, WAITING_RESPONSE, CLOSED }
     public enum ActivityStatus { PLANNED, APPROVED, IN_PROGRESS, COMPLETED, CANCELLED }
     public enum FinanceEntryType { INCOME, EXPENSE }
     public enum ReportStatus { DRAFT, SUBMITTED, APPROVED }
@@ -22,4 +22,6 @@ public final class DomainEnums {
         FINANCE_EXCEL_IMPORT, SURVEYS_IMPORT, SURVEY_RESPONSES_IMPORT, REPORTS_IMPORT, USERS_IMPORT
     }
     public enum IntegrationStatus { COMPLETED, PARTIAL, FAILED }
+    public enum MemberDocumentType { JOIN_APPLICATION, DECISION, BCH_DOCUMENT }
+    public enum ActivityMediaType { PHOTO, DOCUMENT }
 }

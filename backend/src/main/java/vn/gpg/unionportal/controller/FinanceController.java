@@ -5,13 +5,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import vn.gpg.unionportal.dto.ApiModels.FinanceRequest;
 import vn.gpg.unionportal.dto.ApiModels.FinanceSummary;
+import vn.gpg.unionportal.dto.ApiModels.ListFacets;
+import vn.gpg.unionportal.dto.ApiModels.PageResponse;
+import vn.gpg.unionportal.dto.ListQuery;
 import vn.gpg.unionportal.model.FinanceEntry;
 import vn.gpg.unionportal.service.CurrentUserService;
 import vn.gpg.unionportal.service.FinanceService;
 import vn.gpg.unionportal.service.ReportingService;
 
 import java.time.YearMonth;
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/finance")
@@ -28,13 +30,19 @@ public class FinanceController {
     }
 
     @GetMapping
-    public List<FinanceEntry> list(@RequestParam(required = false) Long unitId) {
-        return service.list(unitId);
+    public PageResponse<FinanceEntry> list(@ModelAttribute ListQuery query) {
+        return PageResponse.from(query, service::page, service::search);
     }
 
+    /** Monthly income/expense rollup for the dashboards — unrelated to the list facets below. */
     @GetMapping("/summary")
     public FinanceSummary summary(@RequestParam String month, @RequestParam(required = false) Long unitId) {
         return reportingService.financeSummary(YearMonth.parse(month), currentUser.scopedUnitId(unitId));
+    }
+
+    @GetMapping("/facets")
+    public ListFacets facets(@ModelAttribute ListQuery query) {
+        return service.facets(query);
     }
 
     @PostMapping

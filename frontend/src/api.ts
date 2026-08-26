@@ -1,4 +1,5 @@
 import { getAccessToken, notifyAuthExpired } from './auth'
+import type { ListFacets, PageResponse } from './types'
 
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api'
 
@@ -41,6 +42,38 @@ export async function api<T>(path: string, options?: RequestInit): Promise<T> {
   return response.json() as Promise<T>
 }
 
+/** Query params a paginated list endpoint understands. Empty and nullish values are dropped. */
+export type ListParams = Record<string, string | number | boolean | null | undefined>
+
+export function buildQuery(params: ListParams) {
+  const query = new URLSearchParams()
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === null || value === undefined || value === '' || value === false) return
+    query.set(key, String(value))
+  })
+  return query
+}
+
+const withQuery = (path: string, params: ListParams) => {
+  const query = buildQuery(params)
+  return query.size ? `${path}?${query}` : path
+}
+
+/** One page from a list endpoint. */
+export const apiPage = <T>(path: string, params: ListParams = {}, options?: RequestInit) =>
+  api<PageResponse<T>>(withQuery(path, params), options)
+
+/**
+ * Every row from a list endpoint, for the dropdowns and dashboards that genuinely need the whole
+ * set. Sends `all=true` so the server skips paging, and unwraps the envelope.
+ */
+export const apiAll = async <T>(path: string, params: ListParams = {}, options?: RequestInit) =>
+  (await apiPage<T>(path, { ...params, all: true }, options)).content
+
+/** Whole-dataset numbers for the same filters — metric cards and the status dropdown. */
+export const apiFacets = (path: string, params: ListParams = {}, options?: RequestInit) =>
+  api<ListFacets>(withQuery(`${path}/facets`, params), options)
+
 export async function downloadFile(path: string, filename: string) {
   const headers = new Headers()
   const accessToken = getAccessToken()
@@ -56,6 +89,16 @@ export async function downloadFile(path: string, filename: string) {
   URL.revokeObjectURL(url)
 }
 
+export async function loadFileUrl(path: string) {
+  const headers = new Headers()
+  const accessToken = getAccessToken()
+  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
+  const response = await fetch(apiUrl(path), { headers })
+  if (response.status === 401) notifyAuthExpired()
+  if (!response.ok) throw new ApiError(`Không thể tải nội dung tệp (${response.status})`)
+  return URL.createObjectURL(await response.blob())
+}
+
 export const formatMoney = (value: number | string | undefined) =>
   new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 })
     .format(Number(value ?? 0))
@@ -65,7 +108,14 @@ export const formatDate = (value: unknown) => {
   return new Intl.DateTimeFormat('vi-VN').format(new Date(`${value}T00:00:00`))
 }
 
-const labels: Record<string, string> = {
+/**
+ * Built-in Vietnamese labels for domain enum constants.
+ *
+ * The server holds the same map in `EnumLabels` and uses it to make search match on labels
+ * ("Chờ duyệt" finds `PENDING_APPROVAL`). This copy is the offline fallback so the UI still reads
+ * correctly before {@link loadEnumLabels} resolves, or if that call fails.
+ */
+const fallbackLabels: Record<string, string> = {
   ACTIVE: 'Đang hoạt động', INACTIVE: 'Ngừng hoạt động', MEMBER: 'Đoàn viên',
   NOT_JOINED: 'Chưa gia nhập', LEFT: 'Đã rời', BIRTHDAY: 'Sinh nhật', FUNERAL: 'Hiếu',
   WEDDING: 'Hỷ', VISIT: 'Thăm hỏi', CHILDBIRTH: 'Sinh con', HARDSHIP: 'Khó khăn',
@@ -73,6 +123,7 @@ const labels: Record<string, string> = {
   CANCELLED: 'Đã hủy', COMPLETE: 'Đủ', INCOMPLETE: 'Chưa đủ', NOT_REQUIRED: 'Không yêu cầu',
   LOW: 'Thấp', MEDIUM: 'Trung bình', HIGH: 'Cao', CRITICAL: 'Khẩn cấp',
   VERIFYING: 'Đang xác minh', WAITING_RESPONSE: 'Chờ phản hồi', CLOSED: 'Đã đóng',
+  CLASSIFYING: 'Đang phân loại', ASSIGNED: 'Đã giao PIC',
   PLANNED: 'Kế hoạch', APPROVED: 'Đã duyệt', INCOME: 'Thu', EXPENSE: 'Chi',
   DRAFT: 'Bản nháp', SUBMITTED: 'Đã nộp',
   HR_IMPORT: 'Nhập dữ liệu HR', FINANCE_IMPORT: 'Nhập dữ liệu tài chính',
@@ -82,6 +133,23 @@ const labels: Record<string, string> = {
   SURVEYS_IMPORT: 'Nhập khảo sát từ Excel', SURVEY_RESPONSES_IMPORT: 'Nhập phản hồi khảo sát từ Excel',
   REPORTS_IMPORT: 'Nhập báo cáo từ Excel', USERS_IMPORT: 'Nhập tài khoản từ Excel',
   PARTIAL: 'Hoàn tất một phần', FAILED: 'Thất bại',
+  JOIN_APPLICATION: 'Đơn gia nhập', DECISION: 'Quyết định', BCH_DOCUMENT: 'Tài liệu BCH',
+  PHOTO: 'Ảnh', DOCUMENT: 'Tài liệu',
+}
+
+let labels: Record<string, string> = fallbackLabels
+
+/**
+ * Pulls the labels the server searches on, so a constant added on the backend shows its Vietnamese
+ * name here without a frontend release. Failures are ignored — the built-in map already covers
+ * everything shipped today.
+ */
+export async function loadEnumLabels() {
+  try {
+    labels = { ...fallbackLabels, ...await api<Record<string, string>>('/meta/enum-labels') }
+  } catch {
+    // Offline or unauthorised: keep the built-in labels.
+  }
 }
 
 export const enumLabel = (value: unknown) => labels[String(value)] ?? String(value ?? '—')

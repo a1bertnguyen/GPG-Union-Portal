@@ -3,7 +3,11 @@ package vn.gpg.unionportal.controller;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import vn.gpg.unionportal.dto.ApiModels.CaseGroupCount;
 import vn.gpg.unionportal.dto.ApiModels.LaborCaseRequest;
+import vn.gpg.unionportal.dto.ApiModels.ListFacets;
+import vn.gpg.unionportal.dto.ApiModels.PageResponse;
+import vn.gpg.unionportal.dto.ListQuery;
 import vn.gpg.unionportal.model.LaborCase;
 import vn.gpg.unionportal.service.LaborCaseService;
 
@@ -19,8 +23,19 @@ public class LaborCaseController {
     }
 
     @GetMapping
-    public List<LaborCase> list(@RequestParam(required = false) Long unitId) {
-        return service.list(unitId);
+    public PageResponse<LaborCase> list(@ModelAttribute ListQuery query) {
+        return PageResponse.from(query, service::page, service::search);
+    }
+
+    @GetMapping("/facets")
+    public ListFacets facets(@ModelAttribute ListQuery query) {
+        return service.facets(query);
+    }
+
+    /** Per-issue-group rollup for the analytics bars, which summarise the whole filtered set. */
+    @GetMapping("/issue-groups")
+    public List<CaseGroupCount> issueGroups(@ModelAttribute ListQuery query) {
+        return service.issueGroups(query);
     }
 
     @PostMapping

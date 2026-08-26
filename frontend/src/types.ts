@@ -12,6 +12,36 @@ export interface UnionUnit {
   contactPerson?: string
 }
 
+/** Envelope every list endpoint returns. Mirrors `ApiModels.PageResponse` on the server. */
+export interface PageResponse<T> {
+  content: T[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+}
+
+/**
+ * Whole-dataset numbers for a filtered list, from `GET {resource}/facets`.
+ *
+ * `total` is the grand total for the caller's CĐCS scope ignoring filters — use
+ * `PageResponse.totalElements` for the filtered count. `metrics` is computed over the filtered set
+ * and holds raw numbers only; labels, tones and money formatting stay here in the frontend.
+ */
+export interface ListFacets {
+  total: number
+  statusValues: string[]
+  metrics: Record<string, number>
+}
+
+/** Per-issue-group rollup behind the case analytics bars, from `GET /cases/issue-groups`. */
+export interface CaseGroupCount {
+  issueGroup: string
+  count: number
+  affectedPeople: number
+  overdue: number
+}
+
 export interface BaseRecord {
   id: number
   unionUnit?: UnionUnit
@@ -136,5 +166,60 @@ export interface UserAccount {
   unionUnitCode?: string
   unionUnitName?: string
   lastLoginAt?: string
+  createdAt: string
+}
+
+export interface MemberChange {
+  id: number
+  memberId: number
+  employeeCode: string
+  memberName: string
+  unionUnit: UnionUnit
+  changeType: string
+  effectiveDate: string
+  description: string
+  recordedBy: string
+  createdAt: string
+}
+
+export interface MemberDocument {
+  id: number
+  memberId: number
+  employeeCode: string
+  memberName: string
+  unionUnit: UnionUnit
+  documentType: 'JOIN_APPLICATION' | 'DECISION' | 'BCH_DOCUMENT'
+  fileName: string
+  contentType: string
+  fileSize: number
+  uploadedBy: string
+  createdAt: string
+}
+
+/**
+ * One member's required-document status, from `GET /member-documents/compliance`.
+ * Built server-side because the grid used to cross-join every member against every document.
+ */
+export interface MemberCompliance {
+  memberId: number
+  employeeCode: string
+  memberName: string
+  unionUnit: UnionUnit
+  documents: MemberDocument[]
+  missing: MemberDocument['documentType'][]
+}
+
+export interface ActivityMedia {
+  id: number
+  activityId: number
+  activityCode: string
+  activityName: string
+  unionUnit: UnionUnit
+  mediaType: 'PHOTO' | 'DOCUMENT'
+  title?: string
+  fileName: string
+  contentType: string
+  fileSize: number
+  uploadedBy: string
   createdAt: string
 }

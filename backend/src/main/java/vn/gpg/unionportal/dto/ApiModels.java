@@ -1,6 +1,7 @@
 package vn.gpg.unionportal.dto;
 
 import jakarta.validation.constraints.*;
+import org.springframework.data.domain.Page;
 import vn.gpg.unionportal.model.DomainEnums.*;
 import vn.gpg.unionportal.model.MonthlyReport;
 import vn.gpg.unionportal.model.UnionUnit;
@@ -8,10 +9,64 @@ import vn.gpg.unionportal.model.IntegrationRun;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 public final class ApiModels {
     private ApiModels() {
+    }
+
+    /** Envelope returned by every list endpoint so the client always reads the same shape. */
+    public record PageResponse<T>(List<T> content, int page, int size, long totalElements, int totalPages) {
+        public static <T> PageResponse<T> of(Page<T> page) {
+            return new PageResponse<>(page.getContent(), page.getNumber(), page.getSize(),
+                    page.getTotalElements(), page.getTotalPages());
+        }
+
+        /** Single-page envelope for {@code all=true} callers such as dropdown lookups. */
+        public static <T> PageResponse<T> ofAll(List<T> content) {
+            return new PageResponse<>(content, 0, content.size(), content.size(), content.isEmpty() ? 0 : 1);
+        }
+
+        /**
+         * Picks the paged or the unpaged path based on {@code all}, so each controller states the
+         * two service methods once instead of repeating the branch.
+         */
+        public static <T> PageResponse<T> from(ListQuery query,
+                                               java.util.function.Function<ListQuery, Page<T>> paged,
+                                               java.util.function.Function<ListQuery, List<T>> all) {
+            return query.fetchAll() ? ofAll(all.apply(query)) : of(paged.apply(query));
+        }
+
+        public <R> PageResponse<R> map(java.util.function.Function<T, R> mapper) {
+            return new PageResponse<>(content.stream().map(mapper).toList(), page, size, totalElements, totalPages);
+        }
+    }
+
+    /**
+     * Whole-dataset numbers for a filtered list. The metric cards and the status dropdown must stay
+     * accurate across every page, so they cannot be derived from the page slice.
+     *
+     * <p>The three fields have deliberately different scopes:
+     * <ul>
+     *   <li>{@code total} — grand total for the caller's CĐCS scope, ignoring the search box and the
+     *       filter dropdowns. Feeds the "trên tổng N" hint; {@code PageResponse.totalElements} is the
+     *       filtered count.</li>
+     *   <li>{@code statusValues} — distinct status values in that same unfiltered scope, so the
+     *       dropdown does not shrink as the user narrows the list.</li>
+     *   <li>{@code metrics} — computed over the <em>filtered</em> set. Raw numbers only; labels, tones
+     *       and money formatting stay in the frontend.</li>
+     * </ul>
+     */
+    public record ListFacets(long total, List<String> statusValues, Map<String, Number> metrics) {
+        public static ListFacets empty() {
+            return new ListFacets(0, List.of(), Map.of());
+        }
+    }
+
+    /** Per-issue-group rollup used by the case analytics bars, which group over the whole dataset. */
+    public record CaseGroupCount(String issueGroup, long count, long affectedPeople, long overdue) {
     }
 
     public record UnionUnitRequest(
@@ -43,12 +98,17 @@ public final class ApiModels {
     public record WelfareRequest(
             @NotBlank @Size(max = 40) String recordCode,
             @NotNull WelfareType welfareType,
+            @Size(max = 180) String policyName,
             @NotNull Long unionUnitId,
             @NotBlank @Size(max = 150) String beneficiaryName,
             @NotNull LocalDate eventDate,
+            LocalDate deadline,
             @NotNull WorkStatus status,
             @NotNull @DecimalMin("0.00") BigDecimal amount,
+            @DecimalMin("0.00") BigDecimal standardAmount,
             @NotNull DocumentStatus documentStatus,
+            @NotNull DocumentStatus receiptStatus,
+            @NotNull Boolean hasImage,
             @Size(max = 1000) String notes) {
     }
 
@@ -56,6 +116,8 @@ public final class ApiModels {
             @NotBlank @Size(max = 40) String caseCode,
             @NotNull LocalDate receivedDate,
             @NotNull Long unionUnitId,
+            @NotBlank @Size(max = 150) String requesterName,
+            @Size(max = 120) String source,
             @NotBlank @Size(max = 120) String issueGroup,
             @NotNull CaseSeverity severity,
             @NotBlank @Size(max = 150) String ownerName,
@@ -63,6 +125,7 @@ public final class ApiModels {
             @NotNull CaseStatus status,
             @NotBlank @Size(max = 2000) String description,
             @NotNull @Min(1) Integer affectedPeople,
+            @Size(max = 500) String attachmentNote,
             @Size(max = 2000) String resultText,
             @Size(max = 1000) String overdueReason) {
     }
@@ -77,10 +140,16 @@ public final class ApiModels {
             @NotNull @DecimalMin("0.00") BigDecimal plannedBudget,
             @NotNull @DecimalMin("0.00") BigDecimal actualCost,
             @NotNull @Min(0) Integer participantCount,
+            @Size(max = 2000) String participantList,
+            @NotNull @Min(0) Integer checkInCount,
             @DecimalMin("0.00") @DecimalMax("5.00") BigDecimal usefulnessScore,
+            @Size(max = 2000) String quickFeedback,
+            @Size(max = 2000) String issues,
             @NotNull Boolean reportCompleted,
+            @NotNull DocumentStatus documentStatus,
             @Size(max = 150) String followUpOwner,
-            LocalDate followUpDeadline) {
+            LocalDate followUpDeadline,
+            @Size(max = 2000) String lessonsLearned) {
     }
 
     public record FinanceRequest(
@@ -149,6 +218,68 @@ public final class ApiModels {
             int createdRows,
             int updatedRows,
             List<String> errors) {
+    }
+
+    public record MemberChangeRequest(
+            @NotNull Long memberId,
+            @NotBlank @Size(max = 120) String changeType,
+            @NotNull LocalDate effectiveDate,
+            @NotBlank @Size(max = 2000) String description) {
+    }
+
+    public record MemberChangeView(
+            Long id,
+            Long memberId,
+            String employeeCode,
+            String memberName,
+            UnionUnit unionUnit,
+            String changeType,
+            LocalDate effectiveDate,
+            String description,
+            String recordedBy,
+            Instant createdAt) {
+    }
+
+    public record MemberDocumentView(
+            Long id,
+            Long memberId,
+            String employeeCode,
+            String memberName,
+            UnionUnit unionUnit,
+            MemberDocumentType documentType,
+            String fileName,
+            String contentType,
+            Long fileSize,
+            String uploadedBy,
+            Instant createdAt) {
+    }
+
+    /**
+     * One member's required-document status. Built server-side because the compliance grid used to
+     * cross-join every member against every document in the browser, which cannot be paginated.
+     */
+    public record MemberComplianceView(
+            Long memberId,
+            String employeeCode,
+            String memberName,
+            UnionUnit unionUnit,
+            List<MemberDocumentView> documents,
+            List<MemberDocumentType> missing) {
+    }
+
+    public record ActivityMediaView(
+            Long id,
+            Long activityId,
+            String activityCode,
+            String activityName,
+            UnionUnit unionUnit,
+            ActivityMediaType mediaType,
+            String title,
+            String fileName,
+            String contentType,
+            Long fileSize,
+            String uploadedBy,
+            Instant createdAt) {
     }
 
     public record IntegrationImportResult(

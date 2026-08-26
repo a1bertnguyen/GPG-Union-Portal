@@ -1,10 +1,15 @@
 package vn.gpg.unionportal.service;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import vn.gpg.unionportal.dto.ApiModels.ListFacets;
 import vn.gpg.unionportal.dto.ApiModels.PulseSurveyRequest;
 import vn.gpg.unionportal.dto.ApiModels.PulseSurveyResponseRequest;
 import vn.gpg.unionportal.dto.ApiModels.PulseSurveyView;
+import vn.gpg.unionportal.dto.ListQuery;
 import vn.gpg.unionportal.exception.ResourceNotFoundException;
 import vn.gpg.unionportal.mapper.EntityMapper;
 import vn.gpg.unionportal.model.DomainEnums.SurveyStatus;
@@ -12,40 +17,69 @@ import vn.gpg.unionportal.model.PulseSurvey;
 import vn.gpg.unionportal.model.PulseSurveyResponse;
 import vn.gpg.unionportal.repository.PulseSurveyRepository;
 import vn.gpg.unionportal.repository.PulseSurveyResponseRepository;
+import vn.gpg.unionportal.spec.PulseSurveySpecs;
+import vn.gpg.unionportal.spec.SpecAggregates;
+import vn.gpg.unionportal.spec.Specs;
 
 import java.time.LocalDate;
-import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @Transactional(readOnly = true)
 public class PulseSurveyService {
+    private static final Sort SORT = Sort.by(Sort.Direction.DESC, "startDate");
+
     private final PulseSurveyRepository surveyRepository;
     private final PulseSurveyResponseRepository responseRepository;
     private final EntityMapper mapper;
     private final CurrentUserService currentUser;
     private final RealtimeEventPublisher events;
+    private final SpecAggregates aggregates;
 
     public PulseSurveyService(PulseSurveyRepository surveyRepository,
                               PulseSurveyResponseRepository responseRepository,
                               EntityMapper mapper,
                               CurrentUserService currentUser,
-                              RealtimeEventPublisher events) {
+                              RealtimeEventPublisher events,
+                              SpecAggregates aggregates) {
         this.surveyRepository = surveyRepository;
         this.responseRepository = responseRepository;
         this.mapper = mapper;
         this.currentUser = currentUser;
         this.events = events;
+        this.aggregates = aggregates;
     }
 
-    public List<PulseSurveyView> list(Long unitId, SurveyStatus status) {
-        Long scopedUnitId = currentUser.scopedUnitId(unitId);
-        return surveyRepository.findAll().stream()
-                .filter(item -> scopedUnitId == null || item.getUnionUnit().getId().equals(scopedUnitId))
-                .filter(item -> status == null || item.getStatus() == status)
-                .sorted(Comparator.comparing(PulseSurvey::getStartDate).reversed())
-                .map(this::toView)
-                .toList();
+    public Page<PulseSurveyView> page(ListQuery query) {
+        return surveyRepository.findAll(Specs.nullSafe(filter(query)), query.pageable(SORT)).map(this::toView);
+    }
+
+    public List<PulseSurveyView> search(ListQuery query) {
+        return surveyRepository.findAll(Specs.nullSafe(filter(query)), SORT).stream().map(this::toView).toList();
+    }
+
+    public ListFacets facets(ListQuery query) {
+        Specification<PulseSurvey> scope = Specs.nullSafe(Specs.unitScope(scopedUnitId(query)));
+        Specification<PulseSurvey> filtered = Specs.nullSafe(filter(query));
+        Map<String, Number> metrics = new LinkedHashMap<>();
+        metrics.put("total", surveyRepository.count(filtered));
+        metrics.put("active", surveyRepository.count(filtered.and(Specs.eq("status", SurveyStatus.ACTIVE))));
+        metrics.put("closed", surveyRepository.count(filtered.and(Specs.eq("status", SurveyStatus.CLOSED))));
+        metrics.put("draft", surveyRepository.count(filtered.and(Specs.eq("status", SurveyStatus.DRAFT))));
+        return new ListFacets(
+                surveyRepository.count(scope),
+                aggregates.distinctValues(PulseSurvey.class, scope, "status"),
+                metrics);
+    }
+
+    private Specification<PulseSurvey> filter(ListQuery query) {
+        return PulseSurveySpecs.filter(query, scopedUnitId(query));
+    }
+
+    private Long scopedUnitId(ListQuery query) {
+        return currentUser.scopedUnitId(query.unitId());
     }
 
     @Transactional

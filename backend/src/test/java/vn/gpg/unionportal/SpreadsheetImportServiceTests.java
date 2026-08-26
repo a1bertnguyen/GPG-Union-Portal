@@ -57,6 +57,16 @@ class SpreadsheetImportServiceTests {
                 assertThat(workbook.getSheet("Dữ liệu")).isNotNull();
                 assertThat(workbook.getSheet("Hướng dẫn")).isNotNull();
                 assertThat(workbook.getSheet("Dữ liệu").getRow(0).getPhysicalNumberOfCells()).isGreaterThan(0);
+                var dataSheet = workbook.getSheet("Dữ liệu");
+                assertThat(dataSheet.getRow(0).getCell(0).getStringCellValue())
+                        .as(resource).doesNotMatch("[a-z][A-Za-z]+Code|username|unitCode");
+                for (var cell : dataSheet.getRow(0)) {
+                    int readableWidth = Math.min(cell.getStringCellValue().length() + 3, 55) * 256;
+                    assertThat(dataSheet.getColumnWidth(cell.getColumnIndex())).as(resource + " column " + cell.getColumnIndex())
+                            .isGreaterThanOrEqualTo(readableWidth);
+                }
+                assertThat(workbook.getSheet("Hướng dẫn").getRow(0).getCell(1).getStringCellValue())
+                        .isEqualTo("Mã kỹ thuật");
                 assertThat(workbook.getSheet("Hướng dẫn").getLastRowNum()).isGreaterThan(1);
             }
         }
@@ -162,8 +172,17 @@ class SpreadsheetImportServiceTests {
              var output = new ByteArrayOutputStream()) {
             var sheet = workbook.getSheet("Dữ liệu");
             var header = sheet.getRow(0);
+            var displayedIndexes = new LinkedHashMap<String, Integer>();
+            for (var cell : header) displayedIndexes.put(cell.getStringCellValue(), cell.getColumnIndex());
             var indexes = new LinkedHashMap<String, Integer>();
-            for (var cell : header) indexes.put(cell.getStringCellValue(), cell.getColumnIndex());
+            var guide = workbook.getSheet("Hướng dẫn");
+            for (int rowIndex = 1; rowIndex <= guide.getLastRowNum(); rowIndex++) {
+                var guideRow = guide.getRow(rowIndex);
+                if (guideRow == null || guideRow.getCell(1) == null) continue;
+                String technicalName = guideRow.getCell(1).getStringCellValue();
+                if (technicalName.isBlank()) continue;
+                indexes.put(technicalName, displayedIndexes.get(guideRow.getCell(0).getStringCellValue()));
+            }
             var row = sheet.createRow(1);
             values.forEach((name, value) -> row.createCell(indexes.get(name)).setCellValue(value));
             workbook.write(output);

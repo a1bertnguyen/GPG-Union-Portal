@@ -10,6 +10,7 @@ import vn.gpg.unionportal.dto.AuthModels.LoginRequest;
 import vn.gpg.unionportal.dto.UserAccountModels.UserAccountRequest;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @Transactional
@@ -40,5 +41,21 @@ class UserAccountServiceTests {
 
         assertThat(created.role()).isEqualTo("ADMIN");
         assertThat(created.unionUnitId()).isNull();
+    }
+
+    @Test
+    void adminCanDeleteAnotherAccountButCannotDeleteTheLastActiveAdmin() {
+        var user = accountService.create(new UserAccountRequest(
+                "delete.me", "Tài khoản cần xóa", "USER", 1L, true, "Strong@123"));
+
+        accountService.delete(user.id());
+
+        assertThat(accountService.list()).noneMatch(account -> account.id().equals(user.id()));
+        var lastAdmin = accountService.list().stream()
+                .filter(account -> account.role().equals("ADMIN") && account.active())
+                .findFirst().orElseThrow();
+        assertThatThrownBy(() -> accountService.delete(lastAdmin.id()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("ít nhất một ADMIN");
     }
 }

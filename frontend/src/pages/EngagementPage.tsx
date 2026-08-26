@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { api, currentMonth, formatDate } from '../api'
+import { api, currentMonth, enumLabel, formatDate } from '../api'
 import { StatusBadge } from '../components/CrudPage'
 import ExcelImportActions from '../components/ExcelImportActions'
+import ListCard from '../components/ListCard'
+import TableFilterBar, { FilterField } from '../components/TableFilterBar'
+import { usePagedList } from '../hooks/usePagedList'
 import { importSummary } from '../excel'
 import type { EngagementSummary, PulseSurvey, UnionUnit } from '../types'
 
@@ -24,7 +27,6 @@ export default function EngagementPage({ units, canManage = true }: Props) {
   const [month, setMonth] = useState(currentMonth())
   const [unitId, setUnitId] = useState('')
   const [summary, setSummary] = useState<EngagementSummary | null>(null)
-  const [surveys, setSurveys] = useState<PulseSurvey[]>([])
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [saving, setSaving] = useState(false)
@@ -37,21 +39,23 @@ export default function EngagementPage({ units, canManage = true }: Props) {
   const [respondentName, setRespondentName] = useState('')
   const [surveySearch, setSurveySearch] = useState('')
   const [surveySearchField, setSurveySearchField] = useState('all')
+  const [surveyStatus, setSurveyStatus] = useState('')
+
+  const surveyFilters = useMemo(() => ({
+    q: surveySearch.trim() || undefined,
+    searchField: surveySearchField === 'all' ? undefined : surveySearchField,
+    unitId: unitId || undefined,
+    status: surveyStatus || undefined,
+  }), [surveySearch, surveySearchField, unitId, surveyStatus])
+
+  const surveys = usePagedList<PulseSurvey>({ endpoint: '/surveys', filters: surveyFilters })
+  const surveyFiltersActive = Boolean(surveySearch || surveySearchField !== 'all' || surveyStatus)
 
   const load = useCallback(async () => {
     const query = new URLSearchParams({ month })
-    const surveyQuery = new URLSearchParams()
-    if (unitId) {
-      query.set('unitId', unitId)
-      surveyQuery.set('unitId', unitId)
-    }
+    if (unitId) query.set('unitId', unitId)
     try {
-      const [summaryResult, surveyResult] = await Promise.all([
-        api<EngagementSummary>(`/engagement?${query}`),
-        api<PulseSurvey[]>(`/surveys${surveyQuery.size ? `?${surveyQuery}` : ''}`),
-      ])
-      setSummary(summaryResult)
-      setSurveys(surveyResult)
+      setSummary(await api<EngagementSummary>(`/engagement?${query}`))
       setError('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không thể tải dữ liệu tiếng nói NLĐ')
@@ -61,6 +65,11 @@ export default function EngagementPage({ units, canManage = true }: Props) {
   // Fetching the selected reporting slice is the synchronization performed by this effect.
   // oxlint-disable-next-line react/set-state-in-effect
   useEffect(() => { void load() }, [load])
+
+  /** Both the KPI strip and the survey table have to refresh after any survey change. */
+  const refreshAll = useCallback(async () => {
+    await Promise.all([load(), surveys.reload()])
+  }, [load, surveys])
 
   const openCreate = () => {
     const [year, monthNumber] = month.split('-').map(Number)
@@ -89,7 +98,7 @@ export default function EngagementPage({ units, canManage = true }: Props) {
       })
       setSurveyForm(null)
       setMessage('Đã tạo chiến dịch khảo sát mới.')
-      await load()
+      await refreshAll()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không thể tạo khảo sát')
     } finally {
@@ -114,9 +123,21 @@ export default function EngagementPage({ units, canManage = true }: Props) {
         }),
       })
       setMessage('Khảo sát đã được đóng.')
-      await load()
+      await refreshAll()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không thể đóng khảo sát')
+    }
+  }
+
+  const removeSurvey = async (survey: PulseSurvey) => {
+    if (!window.confirm(`Xóa khảo sát “${survey.title}” và toàn bộ phản hồi liên quan?`)) return
+    try {
+      await api(`/surveys/${survey.id}`, { method: 'DELETE' })
+      setMessage('Đã xóa khảo sát.')
+      setError('')
+      await refreshAll()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Không thể xóa khảo sát')
     }
   }
 
@@ -141,7 +162,7 @@ export default function EngagementPage({ units, canManage = true }: Props) {
       })
       setResponseSurvey(null)
       setMessage('Cảm ơn bạn. Phản hồi đã được ghi nhận.')
-      await load()
+      await refreshAll()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Không thể gửi phản hồi')
     } finally {
@@ -157,20 +178,6 @@ export default function EngagementPage({ units, canManage = true }: Props) {
   ] : []
 
   const maxNeed = Math.max(...(summary?.topNeeds.map(item => item.count) ?? [1]), 1)
-  const visibleSurveys = useMemo(() => {
-    const query = surveySearch.trim().toLocaleLowerCase('vi')
-    if (!query) return surveys
-    return surveys.filter(survey => {
-      const values: Record<string, string> = {
-        surveyCode: survey.surveyCode,
-        title: survey.title,
-        questionText: survey.questionText,
-        unit: `${survey.unionUnit.code} ${survey.unionUnit.name}`,
-        status: survey.status,
-      }
-      return (surveySearchField === 'all' ? Object.values(values).join(' ') : values[surveySearchField] ?? '').toLocaleLowerCase('vi').includes(query)
-    })
-  }, [surveySearch, surveySearchField, surveys])
 
   return (
     <section className="page-section">
@@ -208,22 +215,37 @@ export default function EngagementPage({ units, canManage = true }: Props) {
         </article>
       </div>
 
-      <div className="data-card" id="voice-surveys">
-        <div className="data-card__header"><div className="record-count"><strong>{visibleSurveys.length} chiến dịch khảo sát</strong><span>{visibleSurveys.length === surveys.length ? 'Phản hồi được tổng hợp theo kỳ đã chọn' : `Trên tổng ${surveys.length} chiến dịch`}</span></div><div className="table-filters"><select aria-label="Chọn trường tìm kiếm khảo sát" value={surveySearchField} onChange={event => setSurveySearchField(event.target.value)}><option value="all">Tất cả trường</option><option value="surveyCode">Mã khảo sát</option><option value="title">Tên chiến dịch</option><option value="questionText">Câu hỏi</option><option value="unit">CĐCS</option><option value="status">Trạng thái</option></select><input aria-label="Tìm kiếm khảo sát" value={surveySearch} placeholder="Nhập từ khóa tìm kiếm…" onChange={event => setSurveySearch(event.target.value)} />{(surveySearch || surveySearchField !== 'all') && <button className="button button--ghost" onClick={() => { setSurveySearch(''); setSurveySearchField('all') }}>Xóa lọc</button>}
+      <ListCard
+        id="voice-surveys"
+        list={surveys}
+        unit="chiến dịch"
+        title={`${surveys.total} chiến dịch khảo sát`}
+        subtitle={surveys.total === surveys.facets.total
+          ? 'Phản hồi được tổng hợp theo kỳ đã chọn'
+          : `Trên tổng ${surveys.facets.total} chiến dịch`}
+        actions={<>
+          {surveyFiltersActive && <button className="button button--ghost" onClick={() => { setSurveySearch(''); setSurveySearchField('all'); setSurveyStatus('') }}>Xóa lọc</button>}
+          <button className="button button--ghost" onClick={() => void refreshAll()}>Làm mới</button>
           {canManage && <ExcelImportActions resource="survey-responses" filename="mau-phan-hoi-khao-sat.xlsx" importLabel="Nhập phản hồi" templateLabel="Mẫu phản hồi"
             onError={setError} onImported={async result => {
-              const summary = importSummary(result)
-              if (result.errors.length) setError(`${summary} Lỗi: ${result.errors.slice(0, 3).join(' · ')}`)
-              else { setError(''); setMessage(summary) }
-              await load()
+              const importedSummary = importSummary(result)
+              if (result.errors.length) setError(`${importedSummary} Lỗi: ${result.errors.slice(0, 3).join(' · ')}`)
+              else { setError(''); setMessage(importedSummary) }
+              await refreshAll()
             }} />}
-          <button className="button button--ghost" onClick={() => void load()}>Làm mới</button>
-        </div></div>
+        </>}
+        filters={<TableFilterBar>
+          <FilterField label="Trường"><select aria-label="Chọn trường tìm kiếm khảo sát" value={surveySearchField} onChange={event => setSurveySearchField(event.target.value)}><option value="all">Tất cả trường</option><option value="surveyCode">Mã khảo sát</option><option value="title">Tên chiến dịch</option><option value="questionText">Câu hỏi</option><option value="unit">CĐCS</option><option value="status">Trạng thái</option></select></FilterField>
+          {surveys.facets.statusValues.length > 1 && <FilterField label="Trạng thái"><select aria-label="Lọc theo trạng thái khảo sát" value={surveyStatus} onChange={event => setSurveyStatus(event.target.value)}><option value="">Tất cả</option>{surveys.facets.statusValues.map(value => <option key={value} value={value}>{enumLabel(value)}</option>)}</select></FilterField>}
+          <FilterField label="Tìm kiếm" search><input aria-label="Tìm kiếm khảo sát" value={surveySearch} placeholder="Tên / mã khảo sát…" onChange={event => setSurveySearch(event.target.value)} /></FilterField>
+        </TableFilterBar>}
+      >
         <div className="table-wrap"><table><thead><tr><th>Mã</th><th>Khảo sát</th><th>CĐCS</th><th>Thời gian</th><th>Phản hồi</th><th>Trạng thái</th><th /></tr></thead><tbody>
-          {!visibleSurveys.length && <tr><td colSpan={7} className="empty-cell">{surveys.length ? 'Không có khảo sát phù hợp bộ lọc.' : 'Chưa có chiến dịch khảo sát.'}</td></tr>}
-          {visibleSurveys.map(survey => <tr key={survey.id}><td><strong>{survey.surveyCode}</strong></td><td><strong>{survey.title}</strong><small className="table-subtext">{survey.questionText}</small></td><td>{survey.unionUnit.code}</td><td>{formatDate(survey.startDate)} – {formatDate(survey.endDate)}</td><td><strong>{survey.responseCount}/{survey.targetResponses}</strong><small className="table-subtext">{survey.responseRate}%</small></td><td><StatusBadge value={survey.status} /></td><td className="actions-cell">{survey.status === 'ACTIVE' && <><button className="icon-button" onClick={() => openResponse(survey)}>Phản hồi</button>{canManage && <button className="icon-button icon-button--danger" onClick={() => void closeSurvey(survey)}>Đóng</button>}</>}</td></tr>)}
+          {surveys.loading && <tr><td colSpan={7} className="empty-cell">Đang tải khảo sát…</td></tr>}
+          {!surveys.loading && !surveys.rows.length && <tr><td colSpan={7} className="empty-cell">{surveyFiltersActive ? 'Không có khảo sát phù hợp bộ lọc.' : 'Chưa có chiến dịch khảo sát.'}</td></tr>}
+          {!surveys.loading && surveys.rows.map(survey => <tr key={survey.id}><td><strong>{survey.surveyCode}</strong></td><td><strong>{survey.title}</strong><small className="table-subtext">{survey.questionText}</small></td><td>{survey.unionUnit.code}</td><td>{formatDate(survey.startDate)} – {formatDate(survey.endDate)}</td><td><strong>{survey.responseCount}/{survey.targetResponses}</strong><small className="table-subtext">{survey.responseRate}%</small></td><td><StatusBadge value={survey.status} /></td><td className="actions-cell">{survey.status === 'ACTIVE' && <button className="icon-button" onClick={() => openResponse(survey)}>Phản hồi</button>}{canManage && survey.status === 'ACTIVE' && <button className="icon-button" onClick={() => void closeSurvey(survey)}>Đóng</button>}{canManage && <button className="icon-button icon-button--danger" onClick={() => void removeSurvey(survey)}>Xóa</button>}</td></tr>)}
         </tbody></table></div>
-      </div>
+      </ListCard>
 
       {surveyForm && <div className="modal-backdrop" onMouseDown={() => setSurveyForm(null)}><div className="modal" onMouseDown={event => event.stopPropagation()}><div className="modal__header"><div><p className="eyebrow">Chiến dịch mới</p><h2>Tạo khảo sát nhanh</h2></div><button className="modal__close" onClick={() => setSurveyForm(null)}>×</button></div><form className="form-grid" onSubmit={event => void createSurvey(event)}>
         <label className="field"><span>Mã khảo sát *</span><input required value={surveyForm.surveyCode} onChange={event => setSurveyForm(current => current && ({ ...current, surveyCode: event.target.value }))} /></label>

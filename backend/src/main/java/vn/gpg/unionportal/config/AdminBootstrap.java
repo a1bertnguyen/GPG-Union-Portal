@@ -28,6 +28,7 @@ public class AdminBootstrap implements ApplicationRunner {
     private final String userPassword;
     private final String userFullName;
     private final String userUnitCode;
+    private final boolean bootstrapUserEnabled;
 
     public AdminBootstrap(AdminUserRepository repository,
                           UnionUnitRepository unitRepository,
@@ -38,7 +39,8 @@ public class AdminBootstrap implements ApplicationRunner {
                           @Value("${app.auth.bootstrap-user.username}") String userUsername,
                           @Value("${app.auth.bootstrap-user.password}") String userPassword,
                           @Value("${app.auth.bootstrap-user.full-name}") String userFullName,
-                          @Value("${app.auth.bootstrap-user.unit-code}") String userUnitCode) {
+                          @Value("${app.auth.bootstrap-user.unit-code}") String userUnitCode,
+                          @Value("${app.auth.bootstrap-user.enabled:false}") boolean bootstrapUserEnabled) {
         this.repository = repository;
         this.unitRepository = unitRepository;
         this.passwordEncoder = passwordEncoder;
@@ -49,13 +51,14 @@ public class AdminBootstrap implements ApplicationRunner {
         this.userPassword = userPassword;
         this.userFullName = userFullName;
         this.userUnitCode = userUnitCode;
+        this.bootstrapUserEnabled = bootstrapUserEnabled;
     }
 
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
         createAdmin();
-        createUser();
+        if (bootstrapUserEnabled) createUser();
     }
 
     private void createAdmin() {

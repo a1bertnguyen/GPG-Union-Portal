@@ -3,11 +3,12 @@ package vn.gpg.unionportal.controller;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import vn.gpg.unionportal.dto.ApiModels.ListFacets;
+import vn.gpg.unionportal.dto.ApiModels.PageResponse;
 import vn.gpg.unionportal.dto.ApiModels.WelfareRequest;
+import vn.gpg.unionportal.dto.ListQuery;
 import vn.gpg.unionportal.model.WelfareRecord;
 import vn.gpg.unionportal.service.WelfareService;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/welfare")
@@ -19,8 +20,13 @@ public class WelfareController {
     }
 
     @GetMapping
-    public List<WelfareRecord> list(@RequestParam(required = false) Long unitId) {
-        return service.list(unitId);
+    public PageResponse<WelfareRecord> list(@ModelAttribute ListQuery query) {
+        return PageResponse.from(query, service::page, service::search);
+    }
+
+    @GetMapping("/facets")
+    public ListFacets facets(@ModelAttribute ListQuery query) {
+        return service.facets(query);
     }
 
     @PostMapping

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, currentMonth, enumLabel, formatDate, formatMoney } from '../api'
+import { api, apiAll, currentMonth, enumLabel, formatDate, formatMoney } from '../api'
 import type { BaseRecord, DashboardSummary, EngagementSummary, UnionUnit } from '../types'
 
 export type DashboardKind = 'executive' | 'welfare' | 'cases' | 'activities' | 'finance' | 'voice'
@@ -38,17 +38,20 @@ export default function DashboardPage({ kind }: Props) {
   const [error, setError] = useState('')
 
   useEffect(() => {
+    // These dashboards aggregate a whole period client-side, so they ask for the complete list
+    // (`all=true`) rather than a page. The tables they render are already capped at ten rows each.
     const request: Promise<DashboardLoadResult> = kind === 'executive'
-      ? Promise.all([api<DashboardSummary>(`/dashboard?month=${month}`)]).then(([data]) => ({ summary: data }))
+      ? api<DashboardSummary>(`/dashboard?month=${month}`).then(data => ({ summary: data }))
       : kind === 'voice'
-        ? Promise.all([api<EngagementSummary>(`/engagement?month=${month}`)]).then(([data]) => ({ engagement: data }))
+        ? api<EngagementSummary>(`/engagement?month=${month}`).then(data => ({ engagement: data }))
         : kind === 'welfare'
-          ? Promise.all([api<BaseRecord[]>('/welfare')]).then(([data]) => ({ records: data }))
+          ? apiAll<BaseRecord>('/welfare').then(data => ({ records: data }))
           : kind === 'cases'
-            ? Promise.all([api<BaseRecord[]>('/cases')]).then(([data]) => ({ records: data }))
+            ? apiAll<BaseRecord>('/cases').then(data => ({ records: data }))
             : kind === 'activities'
-              ? Promise.all([api<BaseRecord[]>('/activities')]).then(([data]) => ({ records: data }))
-              : Promise.all([api<BaseRecord[]>('/finance'), api<UnionUnit[]>('/units')]).then(([data, unitData]) => ({ records: data, units: unitData }))
+              ? apiAll<BaseRecord>('/activities').then(data => ({ records: data }))
+              : Promise.all([apiAll<BaseRecord>('/finance'), apiAll<UnionUnit>('/units')])
+                  .then(([data, unitData]) => ({ records: data, units: unitData }))
 
     request.then(result => {
       if (result.summary) setSummary(result.summary)

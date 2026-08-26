@@ -53,12 +53,17 @@ public class EntityMapper {
     public WelfareRecord apply(WelfareRecord entity, WelfareRequest request) {
         entity.setRecordCode(request.recordCode().trim());
         entity.setWelfareType(request.welfareType());
+        entity.setPolicyName(trimToNull(request.policyName()));
         entity.setUnionUnit(requireUnit(request.unionUnitId()));
         entity.setBeneficiaryName(request.beneficiaryName().trim());
         entity.setEventDate(request.eventDate());
+        entity.setDeadline(request.deadline());
         entity.setStatus(request.status());
         entity.setAmount(request.amount());
+        entity.setStandardAmount(request.standardAmount());
         entity.setDocumentStatus(request.documentStatus());
+        entity.setReceiptStatus(request.receiptStatus());
+        entity.setHasImage(request.hasImage());
         entity.setNotes(trimToNull(request.notes()));
         return entity;
     }
@@ -67,6 +72,8 @@ public class EntityMapper {
         entity.setCaseCode(request.caseCode().trim());
         entity.setReceivedDate(request.receivedDate());
         entity.setUnionUnit(requireUnit(request.unionUnitId()));
+        entity.setRequesterName(request.requesterName().trim());
+        entity.setSource(trimToNull(request.source()));
         entity.setIssueGroup(request.issueGroup().trim());
         entity.setSeverity(request.severity());
         entity.setOwnerName(request.ownerName().trim());
@@ -74,6 +81,7 @@ public class EntityMapper {
         entity.setStatus(request.status());
         entity.setDescription(request.description().trim());
         entity.setAffectedPeople(request.affectedPeople());
+        entity.setAttachmentNote(trimToNull(request.attachmentNote()));
         entity.setResultText(trimToNull(request.resultText()));
         entity.setOverdueReason(trimToNull(request.overdueReason()));
         return entity;
@@ -89,10 +97,16 @@ public class EntityMapper {
         entity.setPlannedBudget(request.plannedBudget());
         entity.setActualCost(request.actualCost());
         entity.setParticipantCount(request.participantCount());
+        entity.setParticipantList(trimToNull(request.participantList()));
+        entity.setCheckInCount(request.checkInCount());
         entity.setUsefulnessScore(request.usefulnessScore());
+        entity.setQuickFeedback(trimToNull(request.quickFeedback()));
+        entity.setIssues(trimToNull(request.issues()));
         entity.setReportCompleted(request.reportCompleted());
+        entity.setDocumentStatus(request.documentStatus());
         entity.setFollowUpOwner(trimToNull(request.followUpOwner()));
         entity.setFollowUpDeadline(request.followUpDeadline());
+        entity.setLessonsLearned(trimToNull(request.lessonsLearned()));
         return entity;
     }
 

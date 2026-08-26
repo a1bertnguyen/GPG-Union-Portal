@@ -52,6 +52,18 @@ export default function ReportsPage({ units, canManage = true }: Props) {
     }
   }
 
+  const removeReport = async () => {
+    if (!summary?.narrative || !window.confirm(`Xóa nội dung báo cáo tháng ${summary.month} của ${summary.unionUnitName}?`)) return
+    try {
+      await api(`/reports/${summary.narrative.id}`, { method: 'DELETE' })
+      setMessage('Đã xóa nội dung báo cáo tháng.')
+      setError('')
+      load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Không thể xóa báo cáo')
+    }
+  }
+
   const metrics = summary ? [
     ['Đoàn viên / NLĐ', `${summary.unionMembers} / ${summary.activeEmployees}`],
     ['Chăm lo hoàn tất', `${summary.completedWelfareCases} / ${summary.welfareCases}`],
@@ -132,7 +144,7 @@ export default function ReportsPage({ units, canManage = true }: Props) {
             <label className="field"><span>Trạng thái *</span><select value={status} onChange={event => setStatus(event.target.value)}><option value="DRAFT">Bản nháp</option><option value="SUBMITTED">Đã nộp</option><option value="APPROVED">Đã duyệt</option></select></label>
             <label className="field field--wide"><span>Kế hoạch tháng tới</span><textarea value={planNextMonth} onChange={event => setPlanNextMonth(event.target.value)} /></label>
             <label className="field field--wide"><span>Đề xuất / yêu cầu hỗ trợ</span><textarea value={supportRequest} onChange={event => setSupportRequest(event.target.value)} /></label>
-            <div className="form-actions field--wide"><button className="button button--primary" disabled={saving}>{saving ? 'Đang lưu…' : 'Lưu báo cáo'}</button></div>
+            <div className="form-actions field--wide">{summary?.narrative && <button type="button" className="button button--danger" onClick={() => void removeReport()}>Xóa báo cáo</button>}<button className="button button--primary" disabled={saving}>{saving ? 'Đang lưu…' : 'Lưu báo cáo'}</button></div>
           </form>
         )}
       </article>}

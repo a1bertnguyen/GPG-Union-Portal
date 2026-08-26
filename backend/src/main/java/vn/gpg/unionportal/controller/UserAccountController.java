@@ -3,11 +3,12 @@ package vn.gpg.unionportal.controller;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import vn.gpg.unionportal.dto.ApiModels.ListFacets;
+import vn.gpg.unionportal.dto.ApiModels.PageResponse;
+import vn.gpg.unionportal.dto.ListQuery;
 import vn.gpg.unionportal.service.UserAccountService;
 import vn.gpg.unionportal.dto.UserAccountModels.UserAccountRequest;
 import vn.gpg.unionportal.dto.UserAccountModels.UserAccountView;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/admin/users")
@@ -19,8 +20,14 @@ public class UserAccountController {
     }
 
     @GetMapping
-    public List<UserAccountView> list() {
-        return service.list();
+    public PageResponse<UserAccountView> list(@ModelAttribute ListQuery query) {
+        if (query.fetchAll()) return PageResponse.ofAll(service.search(query));
+        return PageResponse.of(service.page(query)).map(service::view);
+    }
+
+    @GetMapping("/facets")
+    public ListFacets facets(@ModelAttribute ListQuery query) {
+        return service.facets(query);
     }
 
     @PostMapping
@@ -32,5 +39,11 @@ public class UserAccountController {
     @PutMapping("/{id}")
     public UserAccountView update(@PathVariable Long id, @Valid @RequestBody UserAccountRequest request) {
         return service.update(id, request);
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable Long id) {
+        service.delete(id);
     }
 }

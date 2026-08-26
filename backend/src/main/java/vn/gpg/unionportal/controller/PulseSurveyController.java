@@ -3,10 +3,12 @@ package vn.gpg.unionportal.controller;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import vn.gpg.unionportal.dto.ApiModels.ListFacets;
+import vn.gpg.unionportal.dto.ApiModels.PageResponse;
 import vn.gpg.unionportal.dto.ApiModels.PulseSurveyRequest;
 import vn.gpg.unionportal.dto.ApiModels.PulseSurveyResponseRequest;
 import vn.gpg.unionportal.dto.ApiModels.PulseSurveyView;
-import vn.gpg.unionportal.model.DomainEnums.SurveyStatus;
+import vn.gpg.unionportal.dto.ListQuery;
 import vn.gpg.unionportal.model.PulseSurveyResponse;
 import vn.gpg.unionportal.service.PulseSurveyService;
 
@@ -22,9 +24,13 @@ public class PulseSurveyController {
     }
 
     @GetMapping
-    public List<PulseSurveyView> list(@RequestParam(required = false) Long unitId,
-                                      @RequestParam(required = false) SurveyStatus status) {
-        return service.list(unitId, status);
+    public PageResponse<PulseSurveyView> list(@ModelAttribute ListQuery query) {
+        return PageResponse.from(query, service::page, service::search);
+    }
+
+    @GetMapping("/facets")
+    public ListFacets facets(@ModelAttribute ListQuery query) {
+        return service.facets(query);
     }
 
     @PostMapping

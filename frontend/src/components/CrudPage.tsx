@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { api, downloadFile, enumLabel } from '../api'
 import type { BaseRecord, UnionUnit } from '../types'
 import { importSummary } from '../excel'
 import ExcelImportActions from './ExcelImportActions'
+import ListCard from './ListCard'
+import TableFilterBar, { FilterField } from './TableFilterBar'
+import { usePagedList } from '../hooks/usePagedList'
 
 type Option = { value: string; label: string }
 
@@ -31,6 +34,9 @@ export type SummaryCard = {
   tone?: 'blue' | 'teal' | 'green' | 'orange'
 }
 
+/** Tracking filter. The matching itself lives on the server; `value` is the key it understands. */
+export type PresetFilter = { value: string; label: string }
+
 type Props = {
   endpoint: string
   title: string
@@ -40,18 +46,26 @@ type Props = {
   columns: ColumnConfig[]
   units: UnionUnit[]
   notice?: ReactNode
-  enableMemberCsv?: boolean
+  enableMemberExcel?: boolean
   excelResource?: string
   excelFilename?: string
   canImportExcel?: boolean
   readOnly?: boolean
   readOnlyMessage?: string
-  statusField?: string
-  summaryBuilder?: (items: BaseRecord[]) => SummaryCard[]
-  footer?: ReactNode
+  /**
+   * Builds the metric cards from the whole-dataset numbers returned by `{endpoint}/facets`.
+   * Labels, tones and money formatting stay here; the server only supplies raw counts and sums.
+   */
+  summaryBuilder?: (metrics: Record<string, number>) => SummaryCard[]
+  presetFilters?: PresetFilter[]
+  detailRenderer?: (item: BaseRecord, refresh: () => Promise<void>) => ReactNode
+  detailActionLabel?: string
+  openCreateInitially?: boolean
+  onInitialCreateOpened?: () => void
 }
 
 type FormState = Record<string, string | boolean>
+
 export function StatusBadge({ value }: { value: unknown }) {
   const raw = String(value ?? '')
   const tone = ['COMPLETED', 'COMPLETE', 'ACTIVE', 'MEMBER', 'APPROVED', 'SUBMITTED', 'CLOSED', 'INCOME'].includes(raw)
@@ -64,76 +78,68 @@ export function StatusBadge({ value }: { value: unknown }) {
   return <span className={`status status--${tone}`}>{enumLabel(value)}</span>
 }
 
-export default function CrudPage({ endpoint, title, description, singular, fields, columns, units, notice, enableMemberCsv = false, excelResource, excelFilename = 'mau-du-lieu.xlsx', canImportExcel = true, readOnly = false, readOnlyMessage, statusField = 'status', summaryBuilder, footer }: Props) {
-  const [items, setItems] = useState<BaseRecord[]>([])
-  const [loading, setLoading] = useState(true)
-  const [formOpen, setFormOpen] = useState(false)
+export default function CrudPage({ endpoint, title, description, singular, fields, columns, units, notice, enableMemberExcel = false, excelResource, excelFilename = 'mau-du-lieu.xlsx', canImportExcel = true, readOnly = false, readOnlyMessage, summaryBuilder, presetFilters = [], detailRenderer, detailActionLabel = 'Mở', openCreateInitially = false, onInitialCreateOpened }: Props) {
+  const [formOpen, setFormOpen] = useState(openCreateInitially)
   const [editingId, setEditingId] = useState<number | null>(null)
-  const [form, setForm] = useState<FormState>({})
-  const [error, setError] = useState('')
+  const [form, setForm] = useState<FormState>(() => openCreateInitially
+    ? Object.fromEntries(fields.map(field => [field.name, field.defaultValue ?? (field.type === 'checkbox' ? false : '')]))
+    : {})
+  const [formError, setFormError] = useState('')
+  const [actionError, setActionError] = useState('')
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const [searchField, setSearchField] = useState('all')
   const [unitFilter, setUnitFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
+  const [presetFilter, setPresetFilter] = useState('')
   const [transferMessage, setTransferMessage] = useState('')
+  const [viewingItem, setViewingItem] = useState<BaseRecord | null>(null)
 
+  const filters = useMemo(() => ({
+    q: search.trim() || undefined,
+    searchField: searchField === 'all' ? undefined : searchField,
+    unitId: unitFilter || undefined,
+    status: statusFilter || undefined,
+    preset: presetFilter || undefined,
+  }), [search, searchField, unitFilter, statusFilter, presetFilter])
+
+  const list = usePagedList<BaseRecord>({ endpoint, filters })
   const emptyForm = useMemo(() => Object.fromEntries(fields.map(field => [field.name, field.defaultValue ?? (field.type === 'checkbox' ? false : '')])), [fields])
 
-  const load = useCallback(async () => {
-    try {
-      setItems(await api<BaseRecord[]>(endpoint))
-      setError('')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không thể tải dữ liệu')
-    } finally {
-      setLoading(false)
-    }
-  }, [endpoint])
-
-  // Loading remote data is the intended synchronization performed by this effect.
-  // oxlint-disable-next-line react/set-state-in-effect
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    if (openCreateInitially) onInitialCreateOpened?.()
+  }, [onInitialCreateOpened, openCreateInitially])
 
   const hasUnit = fields.some(field => field.type === 'unit')
   const searchableFields = useMemo(() => fields.filter(field => field.type !== 'checkbox'), [fields])
   const selectedSearchField = searchableFields.find(field => field.name === searchField)
-  const statusOptions = useMemo(() => [...new Set(items.map(item => String(item[statusField] ?? '')).filter(Boolean))], [items, statusField])
-  const summaryCards = useMemo(() => summaryBuilder?.(items) ?? [], [items, summaryBuilder])
-  const visibleItems = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase('vi')
-    return items.filter(item => {
-      if (unitFilter && String(item.unionUnit?.id ?? '') !== unitFilter) return false
-      if (statusFilter && String(item[statusField] ?? '') !== statusFilter) return false
-      if (!query) return true
-      if (searchField !== 'all') {
-        const field = searchableFields.find(candidate => candidate.name === searchField)
-        const rawValue = item[searchField]
-        const value = field?.type === 'unit'
-          ? `${item.unionUnit?.code ?? ''} ${item.unionUnit?.name ?? ''} ${item.unionUnit?.companyName ?? ''}`
-          : `${String(rawValue ?? '')} ${enumLabel(rawValue)}`
-        return value.toLocaleLowerCase('vi').includes(query)
-      }
-      const primitiveValues = Object.values(item)
-        .filter(value => ['string', 'number', 'boolean'].includes(typeof value))
-        .flatMap(value => [String(value), enumLabel(value)])
-        .join(' ')
-      const unitValues = item.unionUnit ? `${item.unionUnit.code} ${item.unionUnit.name} ${item.unionUnit.companyName}` : ''
-      return `${primitiveValues} ${unitValues}`.toLocaleLowerCase('vi').includes(query)
-    })
-  }, [items, search, searchField, searchableFields, unitFilter, statusFilter, statusField])
+  const statusOptions = list.facets.statusValues
+  const summaryCards = useMemo(() => summaryBuilder?.(list.facets.metrics) ?? [], [list.facets.metrics, summaryBuilder])
+  const filtersActive = Boolean(search || unitFilter || statusFilter || presetFilter || searchField !== 'all')
 
+  // Exports the filtered set rather than the page on screen, so the same params go to the server.
   const exportPath = useMemo(() => {
     const query = new URLSearchParams()
     if (search.trim()) query.set('q', search.trim())
+    if (searchField !== 'all') query.set('searchField', searchField)
     if (unitFilter) query.set('unitId', unitFilter)
-    return `/members/export.csv${query.size ? `?${query}` : ''}`
-  }, [search, unitFilter])
+    if (statusFilter) query.set('status', statusFilter)
+    if (presetFilter) query.set('preset', presetFilter)
+    return `/members/export.xlsx${query.size ? `?${query}` : ''}`
+  }, [presetFilter, search, searchField, statusFilter, unitFilter])
+
+  const clearFilters = () => {
+    setSearch('')
+    setSearchField('all')
+    setUnitFilter('')
+    setStatusFilter('')
+    setPresetFilter('')
+  }
 
   const openCreate = () => {
     setEditingId(null)
     setForm(emptyForm)
-    setError('')
+    setFormError('')
     setFormOpen(true)
   }
 
@@ -146,14 +152,14 @@ export default function CrudPage({ endpoint, title, description, singular, field
     })
     setEditingId(item.id)
     setForm(values)
-    setError('')
+    setFormError('')
     setFormOpen(true)
   }
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     setSaving(true)
-    setError('')
+    setFormError('')
     const payload: Record<string, unknown> = {}
     fields.forEach(field => {
       const value = form[field.name]
@@ -167,9 +173,9 @@ export default function CrudPage({ endpoint, title, description, singular, field
         body: JSON.stringify(payload),
       })
       setFormOpen(false)
-      await load()
+      await list.reload()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không thể lưu dữ liệu')
+      setFormError(err instanceof Error ? err.message : 'Không thể lưu dữ liệu')
     } finally {
       setSaving(false)
     }
@@ -179,11 +185,15 @@ export default function CrudPage({ endpoint, title, description, singular, field
     if (!window.confirm(`Xóa ${singular.toLowerCase()} này?`)) return
     try {
       await api(`${endpoint}/${item.id}`, { method: 'DELETE' })
-      await load()
+      await list.reload()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Không thể xóa dữ liệu')
+      setActionError(err instanceof Error ? err.message : 'Không thể xóa dữ liệu')
     }
   }
+
+  const actionColumn = !readOnly || Boolean(detailRenderer)
+  const columnCount = columns.length + (actionColumn ? 1 : 0)
+  const error = actionError || list.error
 
   return (
     <section className="page-section">
@@ -194,15 +204,13 @@ export default function CrudPage({ endpoint, title, description, singular, field
           <p>{description}</p>
         </div>
         <div className="page-actions" id="page-actions">
-          {enableMemberCsv && <>
-            <button className="button button--ghost" onClick={() => void downloadFile(exportPath, 'doan-vien.csv').catch(err => setError(err instanceof Error ? err.message : 'Không thể xuất CSV'))}>Xuất CSV</button>
-          </>}
+          {enableMemberExcel && <button className="button button--ghost" onClick={() => void downloadFile(exportPath, 'doan-vien.xlsx').catch(err => setActionError(err instanceof Error ? err.message : 'Không thể xuất Excel'))}>Xuất Excel</button>}
           {excelResource && canImportExcel && <ExcelImportActions resource={excelResource} filename={excelFilename}
-            onError={message => { setTransferMessage(''); setError(message) }} onImported={async result => {
+            onError={message => { setTransferMessage(''); setActionError(message) }} onImported={async result => {
               const summary = importSummary(result)
-              if (result.errors.length) { setTransferMessage(''); setError(`${summary} Lỗi: ${result.errors.slice(0, 3).join(' · ')}`) }
-              else { setError(''); setTransferMessage(summary) }
-              await load()
+              if (result.errors.length) { setTransferMessage(''); setActionError(`${summary} Lỗi: ${result.errors.slice(0, 3).join(' · ')}`) }
+              else { setActionError(''); setTransferMessage(summary) }
+              await list.reload()
             }} />}
           {!readOnly && <button className="button button--primary" onClick={openCreate}>+ Thêm {singular.toLowerCase()}</button>}
         </div>
@@ -219,42 +227,48 @@ export default function CrudPage({ endpoint, title, description, singular, field
         </article>)}
       </div>}
 
-      <div className="data-card" id="records">
-        <div className="data-card__header">
-          <div className="record-count"><strong>{visibleItems.length} bản ghi</strong>{visibleItems.length !== items.length && <span>trên tổng {items.length}</span>}</div>
-          <div className="table-filters">
+      <ListCard
+        id="records"
+        list={list}
+        title={`${list.total} bản ghi`}
+        subtitle={list.total !== list.facets.total ? `Trên tổng ${list.facets.total}` : undefined}
+        actions={<>
+          {filtersActive && <button className="button button--ghost" onClick={clearFilters}>Xóa lọc</button>}
+          <button className="button button--ghost" onClick={() => void list.reload()}>Làm mới</button>
+        </>}
+        filters={<TableFilterBar>
+          <FilterField label="Trường">
             <select aria-label="Chọn trường tìm kiếm" value={searchField} onChange={event => setSearchField(event.target.value)}>
               <option value="all">Tất cả trường</option>
               {searchableFields.map(field => <option key={field.name} value={field.name}>{field.label}</option>)}
             </select>
-            <input aria-label="Tìm kiếm" value={search} placeholder={selectedSearchField ? `Tìm theo ${selectedSearchField.label.toLocaleLowerCase('vi')}…` : 'Nhập từ khóa tìm kiếm…'} onChange={event => setSearch(event.target.value)} />
-            {hasUnit && <select aria-label="Lọc theo CĐCS" value={unitFilter} onChange={event => setUnitFilter(event.target.value)}><option value="">Tất cả CĐCS</option>{units.map(unit => <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>)}</select>}
-            {statusOptions.length > 1 && <select aria-label="Lọc theo trạng thái" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="">Tất cả trạng thái</option>{statusOptions.map(value => <option key={value} value={value}>{enumLabel(value)}</option>)}</select>}
-            {(search || unitFilter || statusFilter || searchField !== 'all') && <button className="button button--ghost" onClick={() => { setSearch(''); setSearchField('all'); setUnitFilter(''); setStatusFilter('') }}>Xóa lọc</button>}
-            <button className="button button--ghost" onClick={() => void load()}>Làm mới</button>
-          </div>
-        </div>
+          </FilterField>
+          {hasUnit && <FilterField label="CĐCS"><select aria-label="Lọc theo CĐCS" value={unitFilter} onChange={event => setUnitFilter(event.target.value)}><option value="">Tất cả CĐCS</option>{units.map(unit => <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>)}</select></FilterField>}
+          {statusOptions.length > 1 && <FilterField label="Trạng thái"><select aria-label="Lọc theo trạng thái" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}><option value="">Tất cả trạng thái</option>{statusOptions.map(value => <option key={value} value={value}>{enumLabel(value)}</option>)}</select></FilterField>}
+          {presetFilters.length > 0 && <FilterField label="Theo dõi"><select aria-label="Lọc nhanh nghiệp vụ" value={presetFilter} onChange={event => setPresetFilter(event.target.value)}><option value="">Tất cả</option>{presetFilters.map(filter => <option key={filter.value} value={filter.value}>{filter.label}</option>)}</select></FilterField>}
+          <FilterField label="Tìm kiếm" search><input aria-label="Tìm kiếm" value={search} placeholder={selectedSearchField ? `Theo ${selectedSearchField.label.toLocaleLowerCase('vi')}…` : 'Tên / mã…'} onChange={event => setSearch(event.target.value)} /></FilterField>
+        </TableFilterBar>}
+      >
         <div className="table-wrap">
           <table>
-            <thead><tr>{columns.map(column => <th key={column.label}>{column.label}</th>)}{!readOnly && <th aria-label="Tác vụ" />}</tr></thead>
+            <thead><tr>{columns.map(column => <th key={column.label}>{column.label}</th>)}{actionColumn && <th aria-label="Tác vụ" />}</tr></thead>
             <tbody>
-              {loading && <tr><td colSpan={columns.length + (readOnly ? 0 : 1)} className="empty-cell">Đang tải dữ liệu…</td></tr>}
-              {!loading && visibleItems.length === 0 && <tr><td colSpan={columns.length + (readOnly ? 0 : 1)} className="empty-cell">{items.length ? 'Không có dữ liệu phù hợp bộ lọc.' : 'Chưa có dữ liệu.'}</td></tr>}
-              {!loading && visibleItems.map(item => (
+              {list.loading && <tr><td colSpan={columnCount} className="empty-cell">Đang tải dữ liệu…</td></tr>}
+              {!list.loading && list.rows.length === 0 && <tr><td colSpan={columnCount} className="empty-cell">{filtersActive ? 'Không có dữ liệu phù hợp bộ lọc.' : 'Chưa có dữ liệu.'}</td></tr>}
+              {!list.loading && list.rows.map(item => (
                 <tr key={item.id}>
                   {columns.map(column => <td key={column.label} className={column.className}>{column.render(item)}</td>)}
-                  {!readOnly && <td className="actions-cell">
-                    <button className="icon-button" onClick={() => openEdit(item)}>Sửa</button>
-                    <button className="icon-button icon-button--danger" onClick={() => void remove(item)}>Xóa</button>
+                  {actionColumn && <td className="actions-cell">
+                    {detailRenderer && <button className="icon-button icon-button--view" onClick={() => setViewingItem(item)}>{detailActionLabel}</button>}
+                    {!readOnly && <button className="icon-button" onClick={() => openEdit(item)}>Sửa</button>}
+                    {!readOnly && <button className="icon-button icon-button--danger" onClick={() => void remove(item)}>Xóa</button>}
                   </td>}
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </div>
-
-      {footer}
+      </ListCard>
 
       {formOpen && (
         <div className="modal-backdrop" onMouseDown={() => setFormOpen(false)}>
@@ -292,12 +306,24 @@ export default function CrudPage({ endpoint, title, description, singular, field
                   )}
                 </label>
               ))}
-              {error && <div className="alert alert--danger field--wide">{error}</div>}
+              {formError && <div className="alert alert--danger field--wide">{formError}</div>}
               <div className="form-actions field--wide">
                 <button type="button" className="button button--ghost" onClick={() => setFormOpen(false)}>Hủy</button>
                 <button type="submit" className="button button--primary" disabled={saving}>{saving ? 'Đang lưu…' : 'Lưu dữ liệu'}</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {viewingItem && detailRenderer && (
+        <div className="modal-backdrop" onMouseDown={() => setViewingItem(null)}>
+          <div className="modal modal--workspace" onMouseDown={event => event.stopPropagation()}>
+            <div className="modal__header">
+              <div><p className="eyebrow">Hồ sơ chi tiết</p><h2>{String(viewingItem.fullName ?? viewingItem.name ?? singular)}</h2></div>
+              <button className="modal__close" onClick={() => setViewingItem(null)}>×</button>
+            </div>
+            {detailRenderer(viewingItem, list.reload)}
           </div>
         </div>
       )}

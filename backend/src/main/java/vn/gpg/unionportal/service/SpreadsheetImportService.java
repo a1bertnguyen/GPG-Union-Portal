@@ -124,8 +124,12 @@ public class SpreadsheetImportService {
                 if (sheet == null) {
                     errors.add("Tệp Excel không có sheet dữ liệu.");
                 } else {
-                    Map<String, Integer> headers = readHeaders(sheet.getRow(0));
-                    var missing = resource.columns.stream().map(Column::name).filter(name -> !headers.containsKey(name.toLowerCase(Locale.ROOT))).toList();
+                    Map<String, Integer> headers = readHeaders(sheet.getRow(0), resource);
+                    var missing = resource.columns.stream()
+                            .filter(Column::required)
+                            .map(Column::name)
+                            .filter(name -> !headers.containsKey(name.toLowerCase(Locale.ROOT)))
+                            .toList();
                     if (!missing.isEmpty()) {
                         errors.add("Thiếu cột: " + String.join(", ", missing) + ". Hãy tải lại file mẫu của hệ thống.");
                     } else {
@@ -214,10 +218,12 @@ public class SpreadsheetImportService {
         var existing = welfareRepository.findByRecordCodeIgnoreCase(code);
         UnionUnit unit = scopedUnit(row.required("unitCode"), existing.map(WelfareRecord::getUnionUnit).orElse(null));
         var request = validate(new WelfareRequest(
-                code, row.enumValue("welfareType", WelfareType.class, true), unit.getId(),
-                row.required("beneficiaryName"), row.date("eventDate", true),
+                code, row.enumValue("welfareType", WelfareType.class, true), row.optional("policyName"), unit.getId(),
+                row.required("beneficiaryName"), row.date("eventDate", true), row.date("deadline", false),
                 row.enumValue("status", WorkStatus.class, true), row.decimal("amount", true),
-                row.enumValue("documentStatus", DocumentStatus.class, true), row.optional("notes")));
+                row.decimal("standardAmount", false), row.enumValue("documentStatus", DocumentStatus.class, true),
+                Optional.ofNullable(row.enumValue("receiptStatus", DocumentStatus.class, false)).orElse(DocumentStatus.INCOMPLETE),
+                Optional.ofNullable(row.bool("hasImage", false)).orElse(false), row.optional("notes")));
         welfareRepository.save(mapper.apply(existing.orElseGet(WelfareRecord::new), request));
         return existing.isEmpty();
     }
@@ -227,10 +233,11 @@ public class SpreadsheetImportService {
         var existing = caseRepository.findByCaseCodeIgnoreCase(code);
         UnionUnit unit = scopedUnit(row.required("unitCode"), existing.map(LaborCase::getUnionUnit).orElse(null));
         var request = validate(new LaborCaseRequest(
-                code, row.date("receivedDate", true), unit.getId(), row.required("issueGroup"),
+                code, row.date("receivedDate", true), unit.getId(),
+                Optional.ofNullable(row.optional("requesterName")).orElse("Chưa cập nhật"), row.optional("source"), row.required("issueGroup"),
                 row.enumValue("severity", CaseSeverity.class, true), row.required("ownerName"),
                 row.date("deadline", true), row.enumValue("status", CaseStatus.class, true),
-                row.required("description"), row.integer("affectedPeople", true), row.optional("resultText"),
+                row.required("description"), row.integer("affectedPeople", true), row.optional("attachmentNote"), row.optional("resultText"),
                 row.optional("overdueReason")));
         caseRepository.save(mapper.apply(existing.orElseGet(LaborCase::new), request));
         return existing.isEmpty();
@@ -244,8 +251,10 @@ public class SpreadsheetImportService {
                 code, row.required("name"), unit.getId(), row.date("eventDate", true),
                 row.enumValue("status", ActivityStatus.class, true), row.optional("objective"),
                 row.decimal("plannedBudget", true), row.decimal("actualCost", true),
-                row.integer("participantCount", true), row.decimal("usefulnessScore", false),
-                row.bool("reportCompleted", true), row.optional("followUpOwner"), row.date("followUpDeadline", false)));
+                row.integer("participantCount", true), row.optional("participantList"), Optional.ofNullable(row.integer("checkInCount", false)).orElse(0),
+                row.decimal("usefulnessScore", false), row.optional("quickFeedback"), row.optional("issues"),
+                row.bool("reportCompleted", true), Optional.ofNullable(row.enumValue("documentStatus", DocumentStatus.class, false)).orElse(DocumentStatus.INCOMPLETE),
+                row.optional("followUpOwner"), row.date("followUpDeadline", false), row.optional("lessonsLearned")));
         activityRepository.save(mapper.apply(existing.orElseGet(UnionActivity::new), request));
         return existing.isEmpty();
     }
@@ -384,13 +393,18 @@ public class SpreadsheetImportService {
         return runRepository.save(run);
     }
 
-    private Map<String, Integer> readHeaders(Row row) {
+    private Map<String, Integer> readHeaders(Row row, Resource resource) {
         if (row == null) throw new IllegalArgumentException("Sheet dữ liệu không có dòng tiêu đề");
         var headers = new LinkedHashMap<String, Integer>();
         for (Cell cell : row) {
             String value = cellText(cell);
             if (value == null) continue;
-            String key = value.toLowerCase(Locale.ROOT);
+            String normalized = value.toLowerCase(Locale.ROOT);
+            String key = resource.columns.stream()
+                    .filter(column -> column.name.equalsIgnoreCase(value) || column.header().equalsIgnoreCase(value))
+                    .map(column -> column.name.toLowerCase(Locale.ROOT))
+                    .findFirst()
+                    .orElse(normalized);
             if (headers.putIfAbsent(key, cell.getColumnIndex()) != null) {
                 throw new IllegalArgumentException("Cột " + value + " bị lặp trong dòng tiêu đề");
             }
@@ -445,9 +459,9 @@ public class SpreadsheetImportService {
         for (int index = 0; index < resource.columns.size(); index++) {
             Column column = resource.columns.get(index);
             Cell cell = header.createCell(index);
-            cell.setCellValue(column.name);
+            cell.setCellValue(column.header());
             cell.setCellStyle(styles.header);
-            sheet.setColumnWidth(index, Math.min(Math.max(column.width, column.name.length() + 3), 55) * 256);
+            sheet.setColumnWidth(index, Math.min(Math.max(column.width, column.header().length() + 3), 55) * 256);
             if ("date".equals(column.kind)) sheet.setDefaultColumnStyle(index, styles.date);
             if ("month".equals(column.kind)) sheet.setDefaultColumnStyle(index, styles.month);
             if ("number".equals(column.kind)) sheet.setDefaultColumnStyle(index, styles.number);
@@ -460,7 +474,7 @@ public class SpreadsheetImportService {
         Sheet sheet = workbook.createSheet(GUIDE_SHEET);
         sheet.createFreezePane(0, 1);
         Row header = sheet.createRow(0);
-        String[] labels = {"Tên cột", "Nội dung", "Bắt buộc", "Định dạng / giá trị hợp lệ"};
+        String[] labels = {"Tên cột trong Excel", "Mã kỹ thuật", "Nội dung", "Bắt buộc", "Định dạng / giá trị hợp lệ"};
         for (int index = 0; index < labels.length; index++) {
             Cell cell = header.createCell(index);
             cell.setCellValue(labels[index]);
@@ -469,21 +483,23 @@ public class SpreadsheetImportService {
         for (int index = 0; index < resource.columns.size(); index++) {
             Column column = resource.columns.get(index);
             Row row = sheet.createRow(index + 1);
-            row.createCell(0).setCellValue(column.name);
-            row.createCell(1).setCellValue(column.description);
-            row.createCell(2).setCellValue(column.required ? "Có" : "Không");
-            row.createCell(3).setCellValue(column.guide());
+            row.createCell(0).setCellValue(column.header());
+            row.createCell(1).setCellValue(column.name);
+            row.createCell(2).setCellValue(column.description);
+            row.createCell(3).setCellValue(column.required ? "Có" : "Không");
+            row.createCell(4).setCellValue(column.guide());
             for (Cell cell : row) cell.setCellStyle(styles.body);
         }
         Row note = sheet.createRow(resource.columns.size() + 3);
         note.createCell(0).setCellValue("Lưu ý");
         note.getCell(0).setCellStyle(styles.noteTitle);
-        note.createCell(1).setCellValue("Không đổi tên cột; ngày dùng yyyy-MM-dd; không dùng công thức. Mã đã tồn tại sẽ được cập nhật. USER chỉ được nhập dữ liệu thuộc CĐCS được gán.");
+        note.createCell(1).setCellValue("Không đổi tên cột tiếng Việt ở sheet Dữ liệu; ngày dùng yyyy-MM-dd; không dùng công thức. Mã đã tồn tại sẽ được cập nhật. USER chỉ được nhập dữ liệu thuộc CĐCS được gán.");
         note.getCell(1).setCellStyle(styles.note);
-        sheet.setColumnWidth(0, 28 * 256);
-        sheet.setColumnWidth(1, 48 * 256);
-        sheet.setColumnWidth(2, 14 * 256);
-        sheet.setColumnWidth(3, 60 * 256);
+        sheet.setColumnWidth(0, 30 * 256);
+        sheet.setColumnWidth(1, 24 * 256);
+        sheet.setColumnWidth(2, 48 * 256);
+        sheet.setColumnWidth(3, 14 * 256);
+        sheet.setColumnWidth(4, 60 * 256);
     }
 
     private void addListValidation(XSSFSheet sheet, int columnIndex, String[] values) {
@@ -516,7 +532,7 @@ public class SpreadsheetImportService {
         CellStyle month = workbook.createCellStyle();
         month.setDataFormat(workbook.createDataFormat().getFormat("yyyy-mm"));
         CellStyle number = workbook.createCellStyle();
-        number.setDataFormat(workbook.createDataFormat().getFormat("#,##0.00"));
+        number.setDataFormat(workbook.createDataFormat().getFormat("#,##0.##"));
 
         Font noteTitleFont = workbook.createFont();
         noteTitleFont.setBold(true);
@@ -535,6 +551,15 @@ public class SpreadsheetImportService {
     }
 
     private record Column(String name, String description, boolean required, String kind, int width, String... allowed) {
+        String header() {
+            int end = description.length();
+            for (char separator : new char[]{',', ';', ':'}) {
+                int index = description.indexOf(separator);
+                if (index >= 0) end = Math.min(end, index);
+            }
+            return description.substring(0, end).trim();
+        }
+
         String guide() {
             if (allowed.length > 0) return String.join(" | ", allowed);
             return switch (kind) {
@@ -564,25 +589,28 @@ public class SpreadsheetImportService {
         WELFARE("welfare", "chăm lo", "mau-cham-lo.xlsx", IntegrationType.WELFARE_IMPORT, false, List.of(
                 c("recordCode", "Mã hồ sơ, khóa cập nhật", true, 20),
                 e("welfareType", "Loại chăm lo", true, "BIRTHDAY", "FUNERAL", "WEDDING", "VISIT", "CHILDBIRTH", "HARDSHIP"),
-                c("unitCode", "Mã CĐCS", true, 18), c("beneficiaryName", "Người thụ hưởng", true, 28),
-                d("eventDate", "Ngày thực hiện", true), e("status", "Trạng thái xử lý", true, "NEW", "PENDING_APPROVAL", "IN_PROGRESS", "COMPLETED", "CANCELLED"),
-                n("amount", "Số tiền", true), e("documentStatus", "Tình trạng chứng từ", true, "COMPLETE", "INCOMPLETE", "NOT_REQUIRED"),
+                c("policyName", "Tên chính sách / định mức áp dụng", false, 30), c("unitCode", "Mã CĐCS", true, 18), c("beneficiaryName", "Người thụ hưởng", true, 28),
+                d("eventDate", "Ngày sự kiện", true), d("deadline", "Hạn hoàn tất", false), e("status", "Trạng thái xử lý", true, "NEW", "PENDING_APPROVAL", "IN_PROGRESS", "COMPLETED", "CANCELLED"),
+                n("amount", "Số tiền", true), n("standardAmount", "Định mức", false), e("documentStatus", "Tình trạng hồ sơ", true, "COMPLETE", "INCOMPLETE", "NOT_REQUIRED"),
+                e("receiptStatus", "Tình trạng biên nhận", false, "COMPLETE", "INCOMPLETE", "NOT_REQUIRED"), e("hasImage", "Có hình ảnh", false, "TRUE", "FALSE"),
                 c("notes", "Ghi chú", false, 42))),
         CASES("cases", "vụ việc", "mau-vu-viec.xlsx", IntegrationType.CASES_IMPORT, false, List.of(
                 c("caseCode", "Mã vụ việc, khóa cập nhật", true, 20), d("receivedDate", "Ngày tiếp nhận", true),
-                c("unitCode", "Mã CĐCS", true, 18), c("issueGroup", "Nhóm vấn đề", true, 24),
+                c("unitCode", "Mã CĐCS", true, 18), c("requesterName", "Người gửi", false, 26), c("source", "Kênh tiếp nhận", false, 22), c("issueGroup", "Nhóm vấn đề", true, 24),
                 e("severity", "Mức độ", true, "LOW", "MEDIUM", "HIGH", "CRITICAL"), c("ownerName", "Người phụ trách", true, 24),
-                d("deadline", "Hạn xử lý", true), e("status", "Trạng thái", true, "NEW", "VERIFYING", "IN_PROGRESS", "WAITING_RESPONSE", "CLOSED"),
+                d("deadline", "Hạn xử lý", true), e("status", "Trạng thái", true, "NEW", "VERIFYING", "CLASSIFYING", "ASSIGNED", "IN_PROGRESS", "WAITING_RESPONSE", "CLOSED"),
                 c("description", "Mô tả", true, 44), n("affectedPeople", "Số NLĐ ảnh hưởng", true),
-                c("resultText", "Kết quả / phản hồi", false, 44), c("overdueReason", "Lý do quá hạn / ETA mới", false, 38))),
+                c("attachmentNote", "Tài liệu đính kèm / liên kết", false, 38), c("resultText", "Kết quả / phản hồi", false, 44), c("overdueReason", "Lý do quá hạn / ETA mới", false, 38))),
         ACTIVITIES("activities", "hoạt động", "mau-hoat-dong.xlsx", IntegrationType.ACTIVITIES_IMPORT, false, List.of(
                 c("activityCode", "Mã hoạt động, khóa cập nhật", true, 20), c("name", "Tên chương trình", true, 32),
                 c("unitCode", "Mã CĐCS", true, 18), d("eventDate", "Ngày tổ chức", true),
                 e("status", "Trạng thái", true, "PLANNED", "APPROVED", "IN_PROGRESS", "COMPLETED", "CANCELLED"),
                 c("objective", "Mục tiêu", false, 38), n("plannedBudget", "Ngân sách dự kiến", true),
                 n("actualCost", "Chi phí thực tế", true), n("participantCount", "Số người tham dự", true),
-                n("usefulnessScore", "Điểm hữu ích 0-5", false), e("reportCompleted", "Đã có báo cáo", true, "TRUE", "FALSE"),
-                c("followUpOwner", "Người follow-up", false, 24), d("followUpDeadline", "Hạn follow-up", false))),
+                c("participantList", "Danh sách tham dự", false, 42), n("checkInCount", "Số người check-in", false),
+                n("usefulnessScore", "Điểm hữu ích 0-5", false), c("quickFeedback", "Phản hồi nhanh", false, 42), c("issues", "Vấn đề phát sinh", false, 42),
+                e("reportCompleted", "Đã có báo cáo", true, "TRUE", "FALSE"), e("documentStatus", "Tình trạng chứng từ", false, "COMPLETE", "INCOMPLETE", "NOT_REQUIRED"),
+                c("followUpOwner", "Người follow-up", false, 24), d("followUpDeadline", "Hạn follow-up", false), c("lessonsLearned", "Bài học", false, 42))),
         FINANCE("finance", "tài chính nội bộ", "mau-tai-chinh-noi-bo.xlsx", IntegrationType.FINANCE_EXCEL_IMPORT, false, List.of(
                 c("entryCode", "Mã phiếu, khóa cập nhật", true, 20), c("unitCode", "Mã CĐCS", true, 18),
                 d("transactionDate", "Ngày giao dịch nội bộ", true), e("entryType", "Loại phiếu", true, "INCOME", "EXPENSE"),
