@@ -7,9 +7,9 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "app.rate-limit")
 public class RateLimitProperties {
     private boolean enabled = true;
-    private int defaultRequests = 120;
-    private int loginRequests = 10;
-    private int realtimeRequests = 20;
+    private int defaultRequests = 300;
+    private int loginRequests = 15;
+    private int realtimeRequests = 60;
     private long windowSeconds = 60;
 
     public boolean isEnabled() {

@@ -121,7 +121,7 @@ Client đã đăng nhập có thể mở luồng SSE bằng `GET /api/realtime/e
 curl.exe -N -H "Authorization: Bearer <access-token>" http://localhost:3638/api/realtime/events
 ```
 
-Rate limiter dùng token bucket nguyên tử theo user đã đăng nhập hoặc IP đối với login. Mặc định mỗi cửa sổ 60 giây cho phép 120 API request, 10 lần login và 20 lần kết nối/reconnect SSE. Response luôn có `X-RateLimit-Limit`, `X-RateLimit-Remaining`; khi vượt hạn mức trả `429 RATE_LIMIT_EXCEEDED` kèm `Retry-After`.
+Rate limiter dùng token bucket nguyên tử theo user đã đăng nhập hoặc IP đối với login. Mặc định mỗi cửa sổ 60 giây cho phép 300 API request, 15 lần login và 60 lần kết nối/reconnect SSE. Response luôn có `X-RateLimit-Limit`, `X-RateLimit-Remaining`; khi vượt hạn mức trả `429 RATE_LIMIT_EXCEEDED` kèm `Retry-After`.
 
 Các hạn mức được cấu hình qua `RATE_LIMIT_*`; timeout và heartbeat SSE dùng `REALTIME_*`. Bộ đếm hiện lưu trong từng backend instance. Khi triển khai nhiều backend replica, cần chuyển bucket sang kho dùng chung như Redis với thao tác Lua nguyên tử để giữ cùng hạn mức trên toàn cụm.
 
