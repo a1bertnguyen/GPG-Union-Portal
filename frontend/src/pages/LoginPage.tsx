@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { api } from '../api'
 import { saveSession, type AuthSession } from '../auth'
+import { loadPortalApp } from '../portalLoader'
 
 type Props = { onLogin: (session: AuthSession) => void }
 
@@ -15,6 +16,7 @@ export default function LoginPage({ onLogin }: Props) {
     event.preventDefault()
     setLoading(true)
     setError('')
+    void loadPortalApp().catch(() => undefined)
     try {
       const session = await api<AuthSession>('/auth/login', {
         method: 'POST',
