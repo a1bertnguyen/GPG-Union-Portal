@@ -14,6 +14,7 @@ public final class ActivitySpecs {
     public static Specification<UnionActivity> filter(ListQuery query, Long scopedUnitId) {
         return Specs.allOf(
                 Specs.unitScope(scopedUnitId),
+                Specs.inMonth("eventDate", query.monthValue()),
                 Specs.enumEquals("status", ActivityStatus.class, query.statusValue()),
                 preset(query.presetValue()),
                 search(query.text(), query.field()));

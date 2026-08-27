@@ -21,6 +21,7 @@ public final class LaborCaseSpecs {
     public static Specification<LaborCase> filter(ListQuery query, Long scopedUnitId, LocalDate today) {
         return Specs.allOf(
                 Specs.unitScope(scopedUnitId),
+                Specs.inMonth("receivedDate", query.monthValue()),
                 Specs.enumEquals("status", CaseStatus.class, query.statusValue()),
                 preset(query.presetValue(), scopedUnitId, today),
                 search(query.text(), query.field()));

@@ -4,9 +4,12 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 
+import java.time.YearMonth;
+import java.time.format.DateTimeParseException;
+
 /**
  * Common query parameters shared by every paginated list endpoint. Bound with {@code @ModelAttribute}
- * so controllers stay readable instead of repeating eight {@code @RequestParam} declarations each.
+ * so controllers stay readable instead of repeating nine {@code @RequestParam} declarations each.
  *
  * <p>All accessors normalise their field, so callers never have to null-check: a missing {@code page}
  * means the first page, a missing {@code size} means {@link #DEFAULT_SIZE}.
@@ -19,10 +22,17 @@ public record ListQuery(
         String searchField,
         Long unitId,
         String status,
-        String preset) {
+        String preset,
+        String month) {
 
     public static final int DEFAULT_SIZE = 20;
     public static final int MAX_SIZE = 200;
+
+    /** Backwards-compatible constructor for internal callers that do not apply a month filter. */
+    public ListQuery(Integer page, Integer size, Boolean all, String q, String searchField,
+                     Long unitId, String status, String preset) {
+        this(page, size, all, q, searchField, unitId, status, preset, null);
+    }
 
     /** Empty query — first page, default size, no filters. Handy for internal callers and tests. */
     public static ListQuery firstPage() {
@@ -66,12 +76,22 @@ public record ListQuery(
         return preset == null || preset.isBlank() ? null : preset.trim();
     }
 
+    /** ISO {@code yyyy-MM} month supplied by dashboard callers, or null for ordinary list screens. */
+    public YearMonth monthValue() {
+        if (month == null || month.isBlank()) return null;
+        try {
+            return YearMonth.parse(month.trim());
+        } catch (DateTimeParseException exception) {
+            throw new IllegalArgumentException("Kỳ dữ liệu phải có định dạng yyyy-MM", exception);
+        }
+    }
+
     public Pageable pageable(Sort sort) {
         return PageRequest.of(pageNumber(), pageSize(), sort);
     }
 
     /** Same filters, but forced to return everything — used to build whole-dataset facets. */
     public ListQuery withoutPaging() {
-        return new ListQuery(null, null, true, q, searchField, unitId, status, preset);
+        return new ListQuery(null, null, true, q, searchField, unitId, status, preset, month);
     }
 }

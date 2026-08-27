@@ -9,6 +9,7 @@ import org.springframework.data.jpa.domain.Specification;
 import vn.gpg.unionportal.i18n.EnumLabels;
 
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -164,6 +165,12 @@ public final class Specs {
 
     public static <T> Specification<T> before(String field, LocalDate date) {
         return (root, query, cb) -> cb.lessThan(root.get(field), date);
+    }
+
+    /** Restricts a date column to one calendar month. A null month leaves the query unchanged. */
+    public static <T> Specification<T> inMonth(String field, YearMonth month) {
+        if (month == null) return null;
+        return (root, query, cb) -> cb.between(root.get(field), month.atDay(1), month.atEndOfMonth());
     }
 
     public static <T> Specification<T> atLeast(String field, int value) {

@@ -17,6 +17,7 @@ public final class FinanceSpecs {
     public static Specification<FinanceEntry> filter(ListQuery query, Long scopedUnitId) {
         return Specs.allOf(
                 Specs.unitScope(scopedUnitId),
+                Specs.inMonth("transactionDate", query.monthValue()),
                 Specs.enumEquals("entryType", FinanceEntryType.class, query.statusValue()),
                 search(query.text(), query.field()));
     }

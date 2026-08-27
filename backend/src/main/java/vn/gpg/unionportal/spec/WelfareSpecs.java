@@ -18,6 +18,7 @@ public final class WelfareSpecs {
     public static Specification<WelfareRecord> filter(ListQuery query, Long scopedUnitId, LocalDate today) {
         return Specs.allOf(
                 Specs.unitScope(scopedUnitId),
+                Specs.inMonth("eventDate", query.monthValue()),
                 Specs.enumEquals("status", WorkStatus.class, query.statusValue()),
                 preset(query.presetValue(), today),
                 search(query.text(), query.field()));

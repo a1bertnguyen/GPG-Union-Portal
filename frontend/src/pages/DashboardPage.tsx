@@ -38,29 +38,43 @@ export default function DashboardPage({ kind }: Props) {
   const [error, setError] = useState('')
 
   useEffect(() => {
+    const controller = new AbortController()
+    const options = { signal: controller.signal }
     // These dashboards aggregate a whole period client-side, so they ask for the complete list
-    // (`all=true`) rather than a page. The tables they render are already capped at ten rows each.
+    // (`all=true`) rather than a page. The month is still applied by the database before rows are
+    // returned, and leaving the dashboard aborts work whose result is no longer visible.
     const request: Promise<DashboardLoadResult> = kind === 'executive'
-      ? api<DashboardSummary>(`/dashboard?month=${month}`).then(data => ({ summary: data }))
+      ? api<DashboardSummary>(`/dashboard?month=${month}`, options).then(data => ({ summary: data }))
       : kind === 'voice'
-        ? api<EngagementSummary>(`/engagement?month=${month}`).then(data => ({ engagement: data }))
+        ? api<EngagementSummary>(`/engagement?month=${month}`, options).then(data => ({ engagement: data }))
         : kind === 'welfare'
-          ? apiAll<BaseRecord>('/welfare').then(data => ({ records: data }))
+          ? apiAll<BaseRecord>('/welfare', { month }, options).then(data => ({ records: data }))
           : kind === 'cases'
-            ? apiAll<BaseRecord>('/cases').then(data => ({ records: data }))
+            ? apiAll<BaseRecord>('/cases', { month }, options).then(data => ({ records: data }))
             : kind === 'activities'
-              ? apiAll<BaseRecord>('/activities').then(data => ({ records: data }))
-              : Promise.all([apiAll<BaseRecord>('/finance'), apiAll<UnionUnit>('/units')])
+              ? apiAll<BaseRecord>('/activities', { month }, options).then(data => ({ records: data }))
+              : Promise.all([
+                  apiAll<BaseRecord>('/finance', { month }, options),
+                  apiAll<UnionUnit>('/units', {}, options),
+                ])
                   .then(([data, unitData]) => ({ records: data, units: unitData }))
 
     request.then(result => {
+      if (controller.signal.aborted) return
       if (result.summary) setSummary(result.summary)
       if (result.engagement) setEngagement(result.engagement)
       if (result.records) setRecords(result.records)
       if (result.units) setUnits(result.units)
       setError('')
-    }).catch(err => setError(err instanceof Error ? err.message : 'Không thể tổng hợp dashboard'))
-      .finally(() => setLoading(false))
+    }).catch(err => {
+      if (!controller.signal.aborted) {
+        setError(err instanceof Error ? err.message : 'Không thể tổng hợp dashboard')
+      }
+    }).finally(() => {
+      if (!controller.signal.aborted) setLoading(false)
+    })
+
+    return () => controller.abort()
   }, [kind, month])
 
   const meta = dashboardMeta[kind]

@@ -1,5 +1,6 @@
 package vn.gpg.unionportal.service;
 
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.gpg.unionportal.exception.ResourceNotFoundException;
@@ -7,6 +8,8 @@ import vn.gpg.unionportal.model.*;
 import vn.gpg.unionportal.model.DomainEnums.*;
 import vn.gpg.unionportal.repository.*;
 import vn.gpg.unionportal.dto.ApiModels.*;
+import vn.gpg.unionportal.spec.SpecAggregates;
+import vn.gpg.unionportal.spec.Specs;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -25,11 +28,12 @@ public class ReportingService {
     private final UnionActivityRepository activityRepository;
     private final FinanceEntryRepository financeRepository;
     private final MonthlyReportRepository reportRepository;
+    private final SpecAggregates aggregates;
 
     public ReportingService(UnionUnitRepository unitRepository, MemberRepository memberRepository,
                             WelfareRecordRepository welfareRepository, LaborCaseRepository caseRepository,
                             UnionActivityRepository activityRepository, FinanceEntryRepository financeRepository,
-                            MonthlyReportRepository reportRepository) {
+                            MonthlyReportRepository reportRepository, SpecAggregates aggregates) {
         this.unitRepository = unitRepository;
         this.memberRepository = memberRepository;
         this.welfareRepository = welfareRepository;
@@ -37,6 +41,7 @@ public class ReportingService {
         this.activityRepository = activityRepository;
         this.financeRepository = financeRepository;
         this.reportRepository = reportRepository;
+        this.aggregates = aggregates;
     }
 
     public DashboardSummary dashboard(YearMonth month) {
@@ -47,38 +52,42 @@ public class ReportingService {
         if (unitId != null && !unitRepository.existsById(unitId)) {
             throw new ResourceNotFoundException("Không tìm thấy CĐCS với id=" + unitId);
         }
-        Predicate<UnionUnit> unitFilter = candidate -> unitId == null || candidate.getId().equals(unitId);
-        var members = memberRepository.findAll().stream().filter(m -> unitFilter.test(m.getUnionUnit())).toList();
-        var welfare = welfareRepository.findAll().stream().filter(w -> unitFilter.test(w.getUnionUnit()))
-                .filter(w -> inMonth(w.getEventDate(), month)).toList();
-        var cases = caseRepository.findAll().stream().filter(c -> unitFilter.test(c.getUnionUnit())).toList();
-        var entries = financeRepository.findAll().stream().filter(e -> unitFilter.test(e.getUnionUnit())).toList();
-        var reports = reportRepository.findAll().stream().filter(r -> unitFilter.test(r.getUnionUnit()))
-                .filter(r -> YearMonth.from(r.getReportMonth()).equals(month)).toList();
+        Specification<Member> memberScope = Specs.nullSafe(Specs.unitScope(unitId));
+        Specification<WelfareRecord> welfareMonth = Specs.nullSafe(Specs.allOf(
+                Specs.unitScope(unitId), Specs.inMonth("eventDate", month)));
+        Specification<LaborCase> caseScope = Specs.nullSafe(Specs.unitScope(unitId));
+        Specification<LaborCase> openCasesSpec = caseScope.and(Specs.notEq("status", CaseStatus.CLOSED));
+        Specification<FinanceEntry> financeScope = Specs.nullSafe(Specs.unitScope(unitId));
+        Specification<FinanceEntry> financeMonth = financeScope.and(Specs.inMonth("transactionDate", month));
+        Specification<MonthlyReport> submittedReports = Specs.nullSafe(Specs.allOf(
+                Specs.unitScope(unitId),
+                Specs.eq("reportMonth", month.atDay(1)),
+                Specs.notEq("status", ReportStatus.DRAFT)));
 
-        long completedWelfare = welfare.stream().filter(w -> w.getStatus() == WorkStatus.COMPLETED).count();
-        double completionRate = welfare.isEmpty() ? 100.0 : BigDecimal.valueOf(completedWelfare * 100.0 / welfare.size())
+        long welfareCount = welfareRepository.count(welfareMonth);
+        long completedWelfare = welfareRepository.count(welfareMonth.and(Specs.eq("status", WorkStatus.COMPLETED)));
+        double completionRate = welfareCount == 0 ? 100.0 : BigDecimal.valueOf(completedWelfare * 100.0 / welfareCount)
                 .setScale(1, RoundingMode.HALF_UP).doubleValue();
-        long openCases = cases.stream().filter(c -> c.getStatus() != CaseStatus.CLOSED).count();
-        long overdueCases = cases.stream().filter(this::isOverdue).count();
-        var monthFinance = financeSummary(entries.stream().filter(e -> inMonth(e.getTransactionDate(), month)).toList());
-        var allFinance = financeSummary(entries);
-        long submittedUnitCount = reports.stream().filter(r -> r.getStatus() != ReportStatus.DRAFT)
-                .map(r -> r.getUnionUnit().getId()).distinct().count();
+        long openCases = caseRepository.count(openCasesSpec);
+        long overdueCases = caseRepository.count(openCasesSpec.and(Specs.before("deadline", LocalDate.now())));
+        var monthFinance = financeSummary(financeMonth);
+        var allFinance = financeSummary(financeScope);
+        long submittedUnitCount = reportRepository.count(submittedReports);
         long unitCount = unitId == null ? unitRepository.count() : 1;
         long pendingReports = Math.max(0, unitCount - submittedUnitCount);
 
         var alerts = new ArrayList<AlertItem>();
         if (overdueCases > 0) alerts.add(new AlertItem("danger", "Vụ việc quá hạn", overdueCases + " vụ việc cần cập nhật lý do/ETA"));
-        long incompleteWelfare = welfare.stream().filter(w -> w.getDocumentStatus() == DocumentStatus.INCOMPLETE).count();
+        long incompleteWelfare = welfareRepository.count(welfareMonth.and(
+                Specs.eq("documentStatus", DocumentStatus.INCOMPLETE)));
         if (incompleteWelfare > 0) alerts.add(new AlertItem("warning", "Hồ sơ chăm lo thiếu chứng từ", incompleteWelfare + " hồ sơ cần bổ sung"));
         if (monthFinance.incompleteDocuments() > 0) alerts.add(new AlertItem("warning", "Chứng từ tài chính chưa đủ", monthFinance.incompleteDocuments() + " giao dịch cần hoàn thiện"));
         if (pendingReports > 0) alerts.add(new AlertItem("info", "Báo cáo chưa nộp", pendingReports + " đơn vị chưa gửi báo cáo tháng"));
 
         return new DashboardSummary(
                 unitCount,
-                members.stream().filter(m -> m.getEmploymentStatus() == EmploymentStatus.ACTIVE).count(),
-                members.stream().filter(m -> m.getMembershipStatus() == MembershipStatus.MEMBER).count(),
+                memberRepository.count(memberScope.and(Specs.eq("employmentStatus", EmploymentStatus.ACTIVE))),
+                memberRepository.count(memberScope.and(Specs.eq("membershipStatus", MembershipStatus.MEMBER))),
                 completionRate,
                 openCases,
                 overdueCases,
@@ -87,6 +96,15 @@ public class ReportingService {
                 allFinance.balance(),
                 pendingReports,
                 alerts);
+    }
+
+    private FinanceSummary financeSummary(Specification<FinanceEntry> scope) {
+        BigDecimal income = aggregates.sum(FinanceEntry.class,
+                scope.and(Specs.eq("entryType", FinanceEntryType.INCOME)), "amount");
+        BigDecimal expense = aggregates.sum(FinanceEntry.class,
+                scope.and(Specs.eq("entryType", FinanceEntryType.EXPENSE)), "amount");
+        long incomplete = financeRepository.count(scope.and(Specs.eq("documentStatus", DocumentStatus.INCOMPLETE)));
+        return new FinanceSummary(income, expense, income.subtract(expense), incomplete);
     }
 
     public FinanceSummary financeSummary(YearMonth month, Long unitId) {
