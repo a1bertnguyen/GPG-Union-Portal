@@ -92,7 +92,21 @@ public final class ApiModels {
             @NotNull MembershipStatus membershipStatus,
             @NotNull EmploymentStatus employmentStatus,
             @Email @Size(max = 150) String email,
-            @Size(max = 30) String phone) {
+            @Size(max = 30) String phone,
+            @Size(max = 150) String company,
+            @Size(max = 120) String proposedUnionTitle,
+            @Size(max = 120) String professionalTitle,
+            Gender gender,
+            @Size(max = 60) String ethnicity,
+            @Size(max = 150) String placeOfBirth,
+            @Size(max = 20) String nationalId,
+            boolean partyMember,
+            @Size(max = 100) String education,
+            @Size(max = 150) String specialization,
+            @Size(max = 100) String politicalTheory,
+            @Size(max = 100) String foreignLanguage,
+            LocalDate startWorkDate,
+            @Size(max = 200) String currentResidence) {
     }
 
     public record WelfareRequest(
@@ -210,14 +224,6 @@ public final class ApiModels {
     }
 
     public record FinanceSummary(BigDecimal income, BigDecimal expense, BigDecimal balance, long incompleteDocuments) {
-    }
-
-    public record MemberImportResult(
-            int totalRows,
-            int importedRows,
-            int createdRows,
-            int updatedRows,
-            List<String> errors) {
     }
 
     public record MemberChangeRequest(

@@ -6,15 +6,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 import vn.gpg.unionportal.dto.ApiModels.ListFacets;
-import vn.gpg.unionportal.dto.ApiModels.MemberImportResult;
 import vn.gpg.unionportal.dto.ApiModels.MemberRequest;
 import vn.gpg.unionportal.dto.ApiModels.PageResponse;
 import vn.gpg.unionportal.dto.ListQuery;
 import vn.gpg.unionportal.model.Member;
-import vn.gpg.unionportal.service.CurrentUserService;
-import vn.gpg.unionportal.service.MemberCsvService;
 import vn.gpg.unionportal.service.MemberService;
 import vn.gpg.unionportal.service.MemberExcelService;
 
@@ -22,15 +18,10 @@ import vn.gpg.unionportal.service.MemberExcelService;
 @RequestMapping("/api/members")
 public class MemberController {
     private final MemberService service;
-    private final MemberCsvService csvService;
-    private final CurrentUserService currentUser;
     private final MemberExcelService excelService;
 
-    public MemberController(MemberService service, MemberCsvService csvService, CurrentUserService currentUser,
-                            MemberExcelService excelService) {
+    public MemberController(MemberService service, MemberExcelService excelService) {
         this.service = service;
-        this.csvService = csvService;
-        this.currentUser = currentUser;
         this.excelService = excelService;
     }
 
@@ -55,20 +46,6 @@ public class MemberController {
     @GetMapping("/facets")
     public ListFacets facets(@ModelAttribute ListQuery query) {
         return service.facets(query);
-    }
-
-    @GetMapping(value = "/export.csv", produces = "text/csv;charset=UTF-8")
-    public ResponseEntity<byte[]> exportCsv(@RequestParam(required = false) Long unitId,
-                                             @RequestParam(required = false, defaultValue = "") String q) {
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=doan-vien.csv")
-                .contentType(MediaType.parseMediaType("text/csv;charset=UTF-8"))
-                .body(csvService.exportMembers(currentUser.scopedUnitId(unitId), q));
-    }
-
-    @PostMapping(value = "/import.csv", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public MemberImportResult importCsv(@RequestPart("file") MultipartFile file) {
-        return csvService.importMembers(file);
     }
 
     @PostMapping

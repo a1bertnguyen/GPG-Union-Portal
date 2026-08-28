@@ -28,11 +28,11 @@ class MemberExcelServiceTests {
         try (var workbook = WorkbookFactory.create(new ByteArrayInputStream(bytes))) {
             var sheet = workbook.getSheet("Dữ liệu");
             assertThat(sheet.getRow(0).getCell(0).getStringCellValue()).isEqualTo("Mã nhân viên");
-            assertThat(sheet.getRow(0).getCell(9).getStringCellValue()).isEqualTo("Số điện thoại");
+            assertThat(sheet.getRow(0).getCell(17).getStringCellValue()).isEqualTo("ĐT di động");
             assertThat(sheet.getLastRowNum()).isEqualTo(1);
-            assertThat(sheet.getRow(1).getCell(6).getStringCellValue()).isEqualTo("NOT_JOINED");
-            assertThat(sheet.getRow(1).getCell(9).getCellType()).isEqualTo(CellType.STRING);
-            assertThat(sheet.getRow(1).getCell(9).getStringCellValue()).startsWith("0");
+            assertThat(sheet.getRow(1).getCell(22).getStringCellValue()).isEqualTo("NOT_JOINED");
+            assertThat(sheet.getRow(1).getCell(17).getCellType()).isEqualTo(CellType.STRING);
+            assertThat(sheet.getRow(1).getCell(17).getStringCellValue()).startsWith("0");
         }
     }
 
@@ -45,11 +45,12 @@ class MemberExcelServiceTests {
             assertThat(sheet.getLastRowNum()).isGreaterThanOrEqualTo(1);
             for (int rowIndex = 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
                 var row = sheet.getRow(rowIndex);
-                boolean missing = row.getCell(3).getStringCellValue().isBlank()
+                // Mirrors MemberSpecs.REQUIRED_FIELDS: jobTitle(7), workplace(4), joinDate(18), email(20), phone(17).
+                boolean missing = row.getCell(7).getStringCellValue().isBlank()
                         || row.getCell(4).getStringCellValue().isBlank()
-                        || row.getCell(5) == null || row.getCell(5).getCellType() == CellType.BLANK
-                        || row.getCell(8).getStringCellValue().isBlank()
-                        || row.getCell(9).getStringCellValue().isBlank();
+                        || row.getCell(18) == null || row.getCell(18).getCellType() == CellType.BLANK
+                        || row.getCell(20).getStringCellValue().isBlank()
+                        || row.getCell(17).getStringCellValue().isBlank();
                 assertThat(missing).as("row %s", rowIndex + 1).isTrue();
             }
         }

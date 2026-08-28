@@ -171,6 +171,19 @@ public class SpreadsheetImportService {
         return resource.fileName;
     }
 
+    /**
+     * Technical name, Vietnamese header and cell kind for every "members" column, in template order.
+     * This is the single source of truth for the member Excel schema — {@code MemberExcelService}
+     * reads it instead of keeping its own duplicated header list.
+     */
+    public static List<ExportColumn> memberExportColumns() {
+        return Resource.MEMBERS.columns.stream().map(column -> new ExportColumn(column.name(), column.header(), column.kind())).toList();
+    }
+
+    /** Column metadata handed to {@code MemberExcelService} so both exports render the same headers. */
+    public record ExportColumn(String name, String header, String kind) {
+    }
+
     private boolean importRow(Resource resource, RowValues row) {
         return switch (resource) {
             case UNITS -> importUnit(row);
@@ -208,7 +221,12 @@ public class SpreadsheetImportService {
         var request = validate(new MemberRequest(
                 code, row.required("fullName"), unit.getId(), row.optional("jobTitle"), row.optional("workplace"),
                 row.date("joinDate", false), row.enumValue("membershipStatus", MembershipStatus.class, true),
-                row.enumValue("employmentStatus", EmploymentStatus.class, true), row.optional("email"), row.optional("phone")));
+                row.enumValue("employmentStatus", EmploymentStatus.class, true), row.optional("email"), row.optional("phone"),
+                row.optional("company"), row.optional("proposedUnionTitle"), row.optional("professionalTitle"),
+                row.enumValue("gender", Gender.class, false), row.optional("ethnicity"), row.optional("placeOfBirth"),
+                row.optional("nationalId"), Optional.ofNullable(row.bool("partyMember", false)).orElse(false),
+                row.optional("education"), row.optional("specialization"), row.optional("politicalTheory"),
+                row.optional("foreignLanguage"), row.date("startWorkDate", false), row.optional("currentResidence")));
         memberRepository.save(mapper.apply(existing.orElseGet(Member::new), request));
         return existing.isEmpty();
     }
@@ -580,12 +598,19 @@ public class SpreadsheetImportService {
                 e("legalStatus", "Tình trạng pháp lý", true, "ACTIVE", "INACTIVE"),
                 c("contactPerson", "Đầu mối liên hệ", false, 24))),
         MEMBERS("members", "đoàn viên", "mau-doan-vien.xlsx", IntegrationType.MEMBERS_IMPORT, false, List.of(
-                c("employeeCode", "Mã nhân viên, khóa cập nhật", true, 20), c("fullName", "Họ và tên", true, 28),
-                c("unitCode", "Mã CĐCS", true, 18), c("jobTitle", "Chức danh", false, 22),
-                c("workplace", "Nơi làm việc", false, 26), d("joinDate", "Ngày gia nhập công đoàn", false),
+                c("employeeCode", "Mã nhân viên, khóa cập nhật", true, 20), c("fullName", "Tên nhân viên", true, 28),
+                c("unitCode", "Mã CĐCS", true, 18), c("company", "Công ty", false, 28),
+                c("workplace", "Nơi làm việc", false, 26), c("proposedUnionTitle", "Đề xuất chức vụ Công đoàn", false, 28),
+                c("professionalTitle", "Chức vụ chuyên môn", false, 24), c("jobTitle", "Chức danh", false, 22),
+                e("gender", "Giới tính", false, "MALE", "FEMALE"), c("ethnicity", "Tên dân tộc", false, 18),
+                c("placeOfBirth", "Nơi sinh", false, 26), c("nationalId", "CCCD", false, 18),
+                e("partyMember", "Đảng viên", false, "TRUE", "FALSE"), c("education", "Học vấn", false, 20),
+                c("specialization", "Chuyên môn", false, 26), c("politicalTheory", "Chính trị", false, 20),
+                c("foreignLanguage", "Ngoại ngữ", false, 20), c("phone", "ĐT di động", false, 18),
+                d("joinDate", "Ngày gia nhập công đoàn", false), d("startWorkDate", "Ngày vào làm", false),
+                c("email", "Email", false, 28), c("currentResidence", "Nơi ở hiện tại", false, 32),
                 e("membershipStatus", "Tình trạng công đoàn", true, "MEMBER", "NOT_JOINED", "LEFT"),
-                e("employmentStatus", "Trạng thái nhân sự", true, "ACTIVE", "INACTIVE"),
-                c("email", "Email", false, 28), c("phone", "Số điện thoại", false, 18))),
+                e("employmentStatus", "Trạng thái nhân sự", true, "ACTIVE", "INACTIVE"))),
         WELFARE("welfare", "chăm lo", "mau-cham-lo.xlsx", IntegrationType.WELFARE_IMPORT, false, List.of(
                 c("recordCode", "Mã hồ sơ, khóa cập nhật", true, 20),
                 e("welfareType", "Loại chăm lo", true, "BIRTHDAY", "FUNERAL", "WEDDING", "VISIT", "CHILDBIRTH", "HARDSHIP"),

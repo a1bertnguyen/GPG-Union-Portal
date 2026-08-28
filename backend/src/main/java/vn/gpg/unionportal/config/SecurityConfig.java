@@ -52,7 +52,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/auth/login", "/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers(HttpMethod.GET,
-                                "/api/auth/me", "/api/dashboard", "/api/units", "/api/members", "/api/members/export.csv", "/api/members/export.xlsx",
+                                "/api/auth/me", "/api/dashboard", "/api/units", "/api/members", "/api/members/export.xlsx",
                                 "/api/member-changes", "/api/member-documents", "/api/member-documents/*/download",
                                 "/api/activity-media", "/api/activity-media/*/download",
                                 "/api/welfare", "/api/cases", "/api/activities", "/api/finance",

@@ -41,32 +41,22 @@ public class DataIntegrationService {
             "entryCode", "unitCode", "transactionDate", "entryType", "category", "amount",
             "description", "documentNumber", "documentStatus");
 
-    private final MemberCsvService memberCsvService;
     private final FinanceEntryRepository financeRepository;
     private final UnionUnitRepository unitRepository;
     private final IntegrationRunRepository runRepository;
     private final RealtimeEventPublisher events;
     private final SpecAggregates aggregates;
 
-    public DataIntegrationService(MemberCsvService memberCsvService,
-                                  FinanceEntryRepository financeRepository,
+    public DataIntegrationService(FinanceEntryRepository financeRepository,
                                   UnionUnitRepository unitRepository,
                                   IntegrationRunRepository runRepository,
                                   RealtimeEventPublisher events,
                                   SpecAggregates aggregates) {
-        this.memberCsvService = memberCsvService;
         this.financeRepository = financeRepository;
         this.unitRepository = unitRepository;
         this.runRepository = runRepository;
         this.events = events;
         this.aggregates = aggregates;
-    }
-
-    public IntegrationImportResult importHr(MultipartFile file, String username) {
-        var result = memberCsvService.importMembers(file);
-        var run = saveRun(IntegrationType.HR_IMPORT, fileName(file), result.totalRows(), result.importedRows(),
-                result.errors(), username);
-        return new IntegrationImportResult(run, result.createdRows(), result.updatedRows(), result.errors());
     }
 
     @Transactional

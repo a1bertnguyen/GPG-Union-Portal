@@ -6,6 +6,7 @@ public final class DomainEnums {
 
     public enum LegalStatus { ACTIVE, INACTIVE }
     public enum MembershipStatus { MEMBER, NOT_JOINED, LEFT }
+    public enum Gender { MALE, FEMALE }
     public enum EmploymentStatus { ACTIVE, INACTIVE }
     public enum WelfareType { BIRTHDAY, FUNERAL, WEDDING, VISIT, CHILDBIRTH, HARDSHIP }
     public enum WorkStatus { NEW, PENDING_APPROVAL, IN_PROGRESS, COMPLETED, CANCELLED }

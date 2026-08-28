@@ -5,6 +5,7 @@ import vn.gpg.unionportal.exception.ResourceNotFoundException;
 import vn.gpg.unionportal.model.*;
 import vn.gpg.unionportal.repository.UnionUnitRepository;
 import vn.gpg.unionportal.dto.ApiModels.*;
+import vn.gpg.unionportal.validation.MemberProfileCatalog;
 
 import java.time.Instant;
 import java.time.YearMonth;
@@ -37,6 +38,7 @@ public class EntityMapper {
     }
 
     public Member apply(Member entity, MemberRequest request) {
+        MemberProfileCatalog.validate(request.company(), request.workplace());
         entity.setEmployeeCode(request.employeeCode().trim());
         entity.setFullName(request.fullName().trim());
         entity.setUnionUnit(requireUnit(request.unionUnitId()));
@@ -47,6 +49,20 @@ public class EntityMapper {
         entity.setEmploymentStatus(request.employmentStatus());
         entity.setEmail(trimToNull(request.email()));
         entity.setPhone(trimToNull(request.phone()));
+        entity.setCompany(trimToNull(request.company()));
+        entity.setProposedUnionTitle(trimToNull(request.proposedUnionTitle()));
+        entity.setProfessionalTitle(trimToNull(request.professionalTitle()));
+        entity.setGender(request.gender());
+        entity.setEthnicity(trimToNull(request.ethnicity()));
+        entity.setPlaceOfBirth(trimToNull(request.placeOfBirth()));
+        entity.setNationalId(trimToNull(request.nationalId()));
+        entity.setPartyMember(request.partyMember());
+        entity.setEducation(trimToNull(request.education()));
+        entity.setSpecialization(trimToNull(request.specialization()));
+        entity.setPoliticalTheory(trimToNull(request.politicalTheory()));
+        entity.setForeignLanguage(trimToNull(request.foreignLanguage()));
+        entity.setStartWorkDate(request.startWorkDate());
+        entity.setCurrentResidence(trimToNull(request.currentResidence()));
         return entity;
     }
 

@@ -82,7 +82,7 @@ class SpreadsheetImportServiceTests {
 
         assertSuccessful("members", values(
                 "employeeCode", "XLS-MEMBER", "fullName", "Đoàn viên Excel", "unitCode", "XLS-UNIT",
-                "jobTitle", "Chuyên viên", "workplace", "Văn phòng", "joinDate", "2026-02-01",
+                "jobTitle", "Chuyên viên", "workplace", "VP-TCT", "joinDate", "2026-02-01",
                 "membershipStatus", "MEMBER", "employmentStatus", "ACTIVE", "email", "excel@gpg.vn", "phone", "0901234567"));
         assertSuccessful("welfare", values(
                 "recordCode", "XLS-WELFARE", "welfareType", "VISIT", "unitCode", "XLS-UNIT",
@@ -155,6 +155,23 @@ class SpreadsheetImportServiceTests {
         assertThat(blocked.run().getStatus()).isEqualTo(IntegrationStatus.FAILED);
         assertThat(blocked.errors()).anyMatch(error -> error.contains("chỉ được truy cập dữ liệu thuộc CĐCS"));
         assertThat(memberRepository.findByEmployeeCodeIgnoreCase("XLS-CROSS-SCOPE")).isEmpty();
+    }
+
+    @Test
+    void rejectsMemberCompanyAndWorkplaceValuesOutsideTheReferenceCatalog() throws Exception {
+        var badCompany = service.importWorkbook("members", workbook("members", values(
+                "employeeCode", "XLS-BAD-COMPANY", "fullName", "Sai công ty", "unitCode", "VCS",
+                "company", "Công ty tự nhập", "workplace", "VP-TCT",
+                "membershipStatus", "MEMBER", "employmentStatus", "ACTIVE")));
+        var badWorkplace = service.importWorkbook("members", workbook("members", values(
+                "employeeCode", "XLS-BAD-WORKPLACE", "fullName", "Sai nơi làm việc", "unitCode", "VCS",
+                "company", "CÔNG TY CỔ PHẦN DỊCH VỤ KỸ THUẬT AZ", "workplace", "Nơi tự nhập",
+                "membershipStatus", "MEMBER", "employmentStatus", "ACTIVE")));
+
+        assertThat(badCompany.errors()).anyMatch(error -> error.contains("Công ty phải được chọn từ danh mục"));
+        assertThat(badWorkplace.errors()).anyMatch(error -> error.contains("Nơi làm việc phải được chọn từ danh mục"));
+        assertThat(memberRepository.findByEmployeeCodeIgnoreCase("XLS-BAD-COMPANY")).isEmpty();
+        assertThat(memberRepository.findByEmployeeCodeIgnoreCase("XLS-BAD-WORKPLACE")).isEmpty();
     }
 
     private vn.gpg.unionportal.dto.ApiModels.SpreadsheetImportResult assertSuccessful(String resource,

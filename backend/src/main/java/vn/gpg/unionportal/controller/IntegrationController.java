@@ -36,11 +36,6 @@ public class IntegrationController {
         return integrationService.runFacets(query);
     }
 
-    @PostMapping(value = "/hr/import.csv", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public IntegrationImportResult importHr(@RequestPart("file") MultipartFile file) {
-        return integrationService.importHr(file, currentUser.username());
-    }
-
     @PostMapping(value = "/finance/import.csv", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public IntegrationImportResult importFinance(@RequestPart("file") MultipartFile file) {
         return integrationService.importFinance(file, currentUser.username());
