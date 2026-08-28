@@ -8,6 +8,12 @@ export const PAGE_SIZES = [20, 50, 100] as const
 export const DEFAULT_PAGE_SIZE = PAGE_SIZES[0]
 
 const SEARCH_DEBOUNCE_MS = 300
+/**
+ * Delay before a freshly mounted tab issues its first request. The backend container has no spare
+ * capacity to serve overlapping requests, so flicking through several tabs within this window
+ * never reaches the network for the tabs skipped past — only the one the user settles on does.
+ */
+const TAB_MOUNT_DEBOUNCE_MS = 200
 const emptyFacets: ListFacets = { total: 0, statusValues: [], metrics: {} }
 
 type Options = {
@@ -82,6 +88,7 @@ export function usePagedList<T>({ endpoint, filters = {}, withFacets = true, sco
   const requestedPage = selection.queryKey === queryKey ? selection.page : 0
 
   const controller = useRef<AbortController | null>(null)
+  const isInitialMount = useRef(true)
 
   const load = useCallback(async () => {
     controller.current?.abort()
@@ -121,9 +128,18 @@ export function usePagedList<T>({ endpoint, filters = {}, withFacets = true, sco
     }
   }, [endpoint, query, queryKey, requestedPage, size, withFacets])
 
-  // Fetching the selected slice is the intended synchronization performed by this effect.
+  // Fetching the selected slice is the intended synchronization performed by this effect. The
+  // first run for a given endpoint mount is delayed so rapidly flicking through tabs skips the
+  // network entirely for every tab except the one the user stops on.
   // oxlint-disable-next-line react/set-state-in-effect
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false
+      const timer = window.setTimeout(() => { void load() }, TAB_MOUNT_DEBOUNCE_MS)
+      return () => window.clearTimeout(timer)
+    }
+    void load()
+  }, [load])
   useEffect(() => () => controller.current?.abort(), [])
 
   const setPage = useCallback((next: number) => {
