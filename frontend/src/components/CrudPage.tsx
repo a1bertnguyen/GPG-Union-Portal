@@ -52,6 +52,7 @@ type Props = {
   canImportExcel?: boolean
   readOnly?: boolean
   readOnlyMessage?: string
+  wideForm?: boolean
   /**
    * Builds the metric cards from the whole-dataset numbers returned by `{endpoint}/facets`.
    * Labels, tones and money formatting stay here; the server only supplies raw counts and sums.
@@ -78,7 +79,7 @@ export function StatusBadge({ value }: { value: unknown }) {
   return <span className={`status status--${tone}`}>{enumLabel(value)}</span>
 }
 
-export default function CrudPage({ endpoint, title, description, singular, fields, columns, units, notice, enableMemberExcel = false, excelResource, excelFilename = 'mau-du-lieu.xlsx', canImportExcel = true, readOnly = false, readOnlyMessage, summaryBuilder, presetFilters = [], detailRenderer, detailActionLabel = 'Mở', openCreateInitially = false, onInitialCreateOpened }: Props) {
+export default function CrudPage({ endpoint, title, description, singular, fields, columns, units, notice, enableMemberExcel = false, excelResource, excelFilename = 'mau-du-lieu.xlsx', canImportExcel = true, readOnly = false, readOnlyMessage, wideForm = false, summaryBuilder, presetFilters = [], detailRenderer, detailActionLabel = 'Mở', openCreateInitially = false, onInitialCreateOpened }: Props) {
   const [formOpen, setFormOpen] = useState(openCreateInitially)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState<FormState>(() => openCreateInitially
@@ -272,12 +273,12 @@ export default function CrudPage({ endpoint, title, description, singular, field
 
       {formOpen && (
         <div className="modal-backdrop" onMouseDown={() => setFormOpen(false)}>
-          <div className="modal" onMouseDown={event => event.stopPropagation()}>
+          <div className={wideForm ? 'modal modal--wide' : 'modal'} onMouseDown={event => event.stopPropagation()}>
             <div className="modal__header">
               <div><p className="eyebrow">{editingId ? 'Cập nhật' : 'Tạo mới'}</p><h2>{singular}</h2></div>
               <button className="modal__close" onClick={() => setFormOpen(false)}>×</button>
             </div>
-            <form onSubmit={event => void submit(event)} className="form-grid">
+            <form onSubmit={event => void submit(event)} className={wideForm ? 'form-grid form-grid--wide' : 'form-grid'}>
               {fields.map(field => (
                 <label key={field.name} className={field.wide ? 'field field--wide' : 'field'}>
                   <span>{field.label}{field.required && <b> *</b>}</span>

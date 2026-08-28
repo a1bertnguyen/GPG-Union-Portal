@@ -1,5 +1,11 @@
 import { enumLabel } from '../api'
 import type { FieldConfig } from '../components/CrudPage'
+import {
+  memberCompanyOptions,
+  memberEducationOptions,
+  memberPoliticalTheoryOptions,
+  memberWorkplaceOptions,
+} from './memberCatalog'
 
 const option = (...values: string[]) => values.map(value => ({ value, label: enumLabel(value) }))
 
@@ -13,12 +19,30 @@ export const unitFields: FieldConfig[] = [
 ]
 
 export const memberFields: FieldConfig[] = [
-  { name: 'employeeCode', label: 'Mã nhân viên', required: true }, { name: 'fullName', label: 'Họ và tên', required: true },
-  { name: 'unionUnitId', label: 'CĐCS', type: 'unit', required: true }, { name: 'jobTitle', label: 'Chức danh' },
-  { name: 'workplace', label: 'Địa điểm làm việc' }, { name: 'joinDate', label: 'Ngày gia nhập', type: 'date' },
+  { name: 'employeeCode', label: 'Mã nhân viên', required: true, placeholder: 'VD: NV0339' },
+  { name: 'fullName', label: 'Họ và tên', required: true },
+  { name: 'unionUnitId', label: 'CĐCS', type: 'unit', required: true },
+  { name: 'company', label: 'Công ty', type: 'select', required: true, options: memberCompanyOptions },
+  { name: 'workplace', label: 'Nơi làm việc', type: 'select', required: true, options: memberWorkplaceOptions },
+  { name: 'proposedUnionTitle', label: 'Chức danh công đoàn', placeholder: 'Nhập chức danh công đoàn' },
+  { name: 'professionalTitle', label: 'Chức vụ chuyên môn', placeholder: 'Nhập chức vụ chuyên môn' },
+  { name: 'jobTitle', label: 'Vị trí công việc', placeholder: 'Nhập vị trí công việc nếu khác chức vụ chuyên môn' },
+  { name: 'gender', label: 'Giới tính', type: 'select', options: option('MALE', 'FEMALE') },
+  { name: 'ethnicity', label: 'Dân tộc', placeholder: 'VD: Kinh' },
+  { name: 'placeOfBirth', label: 'Nơi sinh' },
+  { name: 'nationalId', label: 'CCCD', placeholder: 'Nhập đủ số, kể cả số 0 đầu' },
+  { name: 'partyMember', label: 'Đảng viên', type: 'checkbox', defaultValue: false },
+  { name: 'education', label: 'Học vấn', type: 'select', options: memberEducationOptions },
+  { name: 'specialization', label: 'Chuyên môn' },
+  { name: 'politicalTheory', label: 'Trình độ chính trị', type: 'select', options: memberPoliticalTheoryOptions },
+  { name: 'foreignLanguage', label: 'Ngoại ngữ' },
+  { name: 'phone', label: 'Điện thoại', placeholder: 'Giữ nguyên số 0 đầu' },
+  { name: 'joinDate', label: 'Ngày gia nhập công đoàn', type: 'date' },
+  { name: 'startWorkDate', label: 'Ngày vào làm', type: 'date' },
+  { name: 'email', label: 'Email', type: 'email' },
+  { name: 'currentResidence', label: 'Nơi ở hiện tại', type: 'textarea', wide: true },
   { name: 'membershipStatus', label: 'Tình trạng công đoàn', type: 'select', required: true, options: option('MEMBER', 'NOT_JOINED', 'LEFT'), defaultValue: 'MEMBER' },
   { name: 'employmentStatus', label: 'Trạng thái nhân sự', type: 'select', required: true, options: option('ACTIVE', 'INACTIVE'), defaultValue: 'ACTIVE' },
-  { name: 'email', label: 'Email', type: 'email' }, { name: 'phone', label: 'Điện thoại' },
 ]
 
 export const welfareFields: FieldConfig[] = [

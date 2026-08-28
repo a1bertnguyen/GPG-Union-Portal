@@ -149,10 +149,12 @@ td strong { color: #14224b; }
 
 .modal-backdrop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 25px; background: rgba(6,19,50,.55); backdrop-filter: blur(4px); }
 .modal { width: min(780px, 100%); max-height: calc(100vh - 50px); overflow-y: auto; border-radius: 20px; background: #fff; box-shadow: 0 35px 90px rgba(0,0,0,.28); }
+.modal--wide { width: min(1080px, 100%); }
 .modal__header { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; align-items: center; padding: 22px 25px 17px; border-bottom: 1px solid #e5eaf2; background: #fff; }
 .modal__header h2 { margin: 3px 0 0; color: #162653; font-size: 24px; }
 .modal__close { width: 36px; height: 36px; border: 0; border-radius: 50%; color: #6e798c; background: #eff3f8; font-size: 24px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 17px; padding: 24px; }
+.form-grid--wide { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .field { display: grid; gap: 7px; min-width: 0; color: #47546a; font-size: 13px; font-weight: 650; }
 .field b { color: var(--red); }
 .field--wide { grid-column: 1 / -1; }
@@ -331,6 +333,7 @@ textarea { min-height: 88px; resize: vertical; line-height: 1.45; }
 .menu-scrim { display: none; }
 
 @media (max-width: 1100px) {
+  .form-grid--wide { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metric-grid, .report-metrics { grid-template-columns: repeat(2, 1fr); }
   .dashboard-grid, .dashboard-grid--overview { grid-template-columns: 1fr 1fr; }
   .dashboard-grid--overview > :last-child { grid-column: 1 / -1; }

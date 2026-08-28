@@ -273,7 +273,29 @@ export function MemberDetailPanel({ member, refreshMembers }: { member: BaseReco
 
   return <div className="member-detail">
     {error && <div className="alert alert--danger">{error}</div>}
-    <div className="member-detail__identity"><div><span>Mã nhân viên</span><strong>{String(member.employeeCode)}</strong></div><div><span>CĐCS</span><strong>{member.unionUnit?.code ?? '—'}</strong></div><div><span>Chức danh</span><strong>{String(member.jobTitle ?? '—')}</strong></div><div><span>Ngày gia nhập</span><strong>{formatDate(member.joinDate)}</strong></div></div>
+    <div className="member-detail__identity">
+      <div><span>Mã nhân viên</span><strong>{String(member.employeeCode)}</strong></div>
+      <div><span>CĐCS</span><strong>{member.unionUnit?.code ?? '—'}</strong></div>
+      <div><span>Công ty</span><strong>{String(member.company ?? '—')}</strong></div>
+      <div><span>Nơi làm việc</span><strong>{String(member.workplace ?? '—')}</strong></div>
+      <div><span>Chức danh công đoàn</span><strong>{String(member.proposedUnionTitle ?? '—')}</strong></div>
+      <div><span>Chức vụ chuyên môn</span><strong>{String(member.professionalTitle ?? '—')}</strong></div>
+      <div><span>Vị trí công việc</span><strong>{String(member.jobTitle ?? '—')}</strong></div>
+      <div><span>Ngày gia nhập CĐ</span><strong>{formatDate(member.joinDate)}</strong></div>
+    </div>
+    <section>
+      <div className="section-title"><div><p className="eyebrow">Thông tin cá nhân</p><h3>Thông tin trích ngang</h3></div></div>
+      <div className="member-detail__identity">
+        <div><span>Giới tính</span><strong>{enumLabel(member.gender)}</strong></div>
+        <div><span>Dân tộc</span><strong>{String(member.ethnicity ?? '—')}</strong></div>
+        <div><span>Nơi sinh</span><strong>{String(member.placeOfBirth ?? '—')}</strong></div>
+        <div><span>CCCD</span><strong>{String(member.nationalId ?? '—')}</strong></div>
+        <div><span>Đảng viên</span><strong>{member.partyMember ? 'Có' : 'Không'}</strong></div>
+        <div><span>Học vấn</span><strong>{String(member.education ?? '—')}</strong></div>
+        <div><span>Điện thoại</span><strong>{String(member.phone ?? '—')}</strong></div>
+        <div><span>Email</span><strong>{String(member.email ?? '—')}</strong></div>
+      </div>
+    </section>
     <section><div className="section-title"><div><p className="eyebrow">Hồ sơ bắt buộc</p><h3>Tài liệu đi kèm</h3></div><b>{documents.length}/{documentTypes.length} nhóm đã có</b></div>
       <div className="required-docs required-docs--horizontal">{documentTypes.map(type => { const doc = documents.find(item => item.documentType === type); return <div key={type} className={doc ? 'required-doc required-doc--done' : 'required-doc'}><span>{doc ? '✓' : '!'}</span><div><strong>{enumLabel(type)}</strong>{doc ? <div className="required-doc__actions"><button type="button" onClick={() => void downloadFile(`/member-documents/${doc.id}/download`, doc.fileName)}>{doc.fileName}</button><button type="button" className="icon-button icon-button--danger" onClick={() => void removeDocument(doc)}>Xóa</button></div> : <small>Bắt buộc · chưa có</small>}</div></div> })}</div>
       <form className="inline-upload" onSubmit={event => void upload(event)}><select value={documentType} onChange={event => setDocumentType(event.target.value as typeof documentType)}>{documentTypes.map(type => <option key={type} value={type}>{enumLabel(type)}</option>)}</select><input type="file" required accept=".pdf,.doc,.docx,image/*" onChange={event => setFile(event.target.files?.[0] ?? null)} /><button className="button button--primary">Tải tài liệu</button></form>

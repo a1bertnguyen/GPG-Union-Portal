@@ -12,8 +12,9 @@ export const unitColumns: ColumnConfig[] = [
 
 export const memberColumns: ColumnConfig[] = [
   { label: 'Mã NV', render: item => <strong>{text(item, 'employeeCode')}</strong> }, { label: 'Họ tên', render: item => text(item, 'fullName') },
-  { label: 'CĐCS', render: item => item.unionUnit?.code ?? '—' }, { label: 'Chức danh', render: item => text(item, 'jobTitle') },
-  { label: 'Gia nhập', render: item => formatDate(item.joinDate) }, { label: 'Tình trạng', render: item => <StatusBadge value={item.membershipStatus} /> },
+  { label: 'Công ty', render: item => text(item, 'company') }, { label: 'Nơi làm việc', render: item => text(item, 'workplace') },
+  { label: 'CĐCS', render: item => item.unionUnit?.code ?? '—' }, { label: 'Chức danh CĐ', render: item => text(item, 'proposedUnionTitle') },
+  { label: 'Chức vụ chuyên môn', render: item => text(item, 'professionalTitle') }, { label: 'Tình trạng', render: item => <StatusBadge value={item.membershipStatus} /> },
 ]
 
 export const welfareColumns: ColumnConfig[] = [

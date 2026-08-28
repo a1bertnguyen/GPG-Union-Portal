@@ -132,7 +132,8 @@ export const formatDate = (value: unknown) => {
  */
 const fallbackLabels: Record<string, string> = {
   ACTIVE: 'Đang hoạt động', INACTIVE: 'Ngừng hoạt động', MEMBER: 'Đoàn viên',
-  NOT_JOINED: 'Chưa gia nhập', LEFT: 'Đã rời', BIRTHDAY: 'Sinh nhật', FUNERAL: 'Hiếu',
+  NOT_JOINED: 'Chưa gia nhập', LEFT: 'Đã rời', MALE: 'Nam', FEMALE: 'Nữ',
+  BIRTHDAY: 'Sinh nhật', FUNERAL: 'Hiếu',
   WEDDING: 'Hỷ', VISIT: 'Thăm hỏi', CHILDBIRTH: 'Sinh con', HARDSHIP: 'Khó khăn',
   NEW: 'Mới', PENDING_APPROVAL: 'Chờ duyệt', IN_PROGRESS: 'Đang xử lý', COMPLETED: 'Hoàn tất',
   CANCELLED: 'Đã hủy', COMPLETE: 'Đủ', INCOMPLETE: 'Chưa đủ', NOT_REQUIRED: 'Không yêu cầu',
