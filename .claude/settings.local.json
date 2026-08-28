@@ -1,4 +1,18 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(npx gsd-core *)",
+      "Read(.planning/*)",
+      "Edit(.planning/*)",
+      "Read(STATE.md)",
+      "Edit(STATE.md)"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(.secrets)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -189,18 +203,7 @@
   "worktree": {
     "baseRef": "head"
   },
-  "permissions": {
-    "allow": [
-      "Bash(npx gsd-core *)",
-      "Read(.planning/*)",
-      "Edit(.planning/*)",
-      "Read(STATE.md)",
-      "Edit(STATE.md)"
-    ],
-    "deny": [
-      "Read(.env)",
-      "Read(.env.*)",
-      "Read(.secrets)"
-    ]
+  "enabledPlugins": {
+    "everything-claude-code@everything-claude-code": true
   }
 }
