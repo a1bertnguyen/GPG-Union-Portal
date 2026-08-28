@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/audit-bundle.mjs",
     "lint": "oxlint",
     "test": "node --test tests/*.test.mjs",
     "preview": "vite preview"

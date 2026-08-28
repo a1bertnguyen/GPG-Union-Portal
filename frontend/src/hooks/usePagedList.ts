@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { apiFacets, apiPage, type ListParams } from '../api'
+import { type ListParams } from '../api'
+import { apiFacetsCached, apiPageCached, invalidateApiCache } from '../apiCache'
 import type { ListFacets, PageResponse } from '../types'
 
 /** Page sizes offered in the pagination footer. */
@@ -91,8 +92,8 @@ export function usePagedList<T>({ endpoint, filters = {}, withFacets = true, sco
     setError('')
     try {
       const [pageResult, facetResult] = await Promise.all([
-        apiPage<T>(endpoint, { ...query, page: requestedPage, size }, { signal: current.signal }),
-        withFacets ? apiFacets(endpoint, query, { signal: current.signal }) : Promise.resolve(emptyFacets),
+        apiPageCached<T>(endpoint, { ...query, page: requestedPage, size }, { signal: current.signal }),
+        withFacets ? apiFacetsCached(endpoint, query, { signal: current.signal }) : Promise.resolve(emptyFacets),
       ])
       if (current.signal.aborted) return
 
@@ -136,6 +137,11 @@ export function usePagedList<T>({ endpoint, filters = {}, withFacets = true, sco
     setSelection({ queryKey, page: 0 })
   }, [queryKey])
 
+  const reload = useCallback(async () => {
+    invalidateApiCache(endpoint)
+    await load()
+  }, [endpoint, load])
+
   return {
     rows: result.content,
     total: result.totalElements,
@@ -147,6 +153,6 @@ export function usePagedList<T>({ endpoint, filters = {}, withFacets = true, sco
     facets,
     loading,
     error,
-    reload: load,
+    reload,
   }
 }

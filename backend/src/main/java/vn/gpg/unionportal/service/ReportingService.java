@@ -16,6 +16,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.function.Predicate;
 
 @Service
@@ -56,7 +57,9 @@ public class ReportingService {
         Specification<WelfareRecord> welfareMonth = Specs.nullSafe(Specs.allOf(
                 Specs.unitScope(unitId), Specs.inMonth("eventDate", month)));
         Specification<LaborCase> caseScope = Specs.nullSafe(Specs.unitScope(unitId));
-        Specification<LaborCase> openCasesSpec = caseScope.and(Specs.notEq("status", CaseStatus.CLOSED));
+        Specification<LaborCase> openCaseCondition = Specs.notEq("status", CaseStatus.CLOSED);
+        Specification<LaborCase> overdueCaseCondition = openCaseCondition.and(
+                Specs.before("deadline", LocalDate.now()));
         Specification<FinanceEntry> financeScope = Specs.nullSafe(Specs.unitScope(unitId));
         Specification<FinanceEntry> financeMonth = financeScope.and(Specs.inMonth("transactionDate", month));
         Specification<MonthlyReport> submittedReports = Specs.nullSafe(Specs.allOf(
@@ -64,12 +67,22 @@ public class ReportingService {
                 Specs.eq("reportMonth", month.atDay(1)),
                 Specs.notEq("status", ReportStatus.DRAFT)));
 
-        long welfareCount = welfareRepository.count(welfareMonth);
-        long completedWelfare = welfareRepository.count(welfareMonth.and(Specs.eq("status", WorkStatus.COMPLETED)));
+        var memberCounts = aggregates.countMetrics(Member.class, memberScope, Map.of(
+                "active", Specs.eq("employmentStatus", EmploymentStatus.ACTIVE),
+                "unionMembers", Specs.eq("membershipStatus", MembershipStatus.MEMBER)));
+        var welfareCounts = aggregates.countMetrics(WelfareRecord.class, welfareMonth, Map.of(
+                "completed", Specs.eq("status", WorkStatus.COMPLETED),
+                "incompleteDocuments", Specs.eq("documentStatus", DocumentStatus.INCOMPLETE)));
+        var caseCounts = aggregates.countMetrics(LaborCase.class, caseScope, Map.of(
+                "open", openCaseCondition,
+                "overdue", overdueCaseCondition));
+
+        long welfareCount = welfareCounts.total();
+        long completedWelfare = welfareCounts.value("completed");
         double completionRate = welfareCount == 0 ? 100.0 : BigDecimal.valueOf(completedWelfare * 100.0 / welfareCount)
                 .setScale(1, RoundingMode.HALF_UP).doubleValue();
-        long openCases = caseRepository.count(openCasesSpec);
-        long overdueCases = caseRepository.count(openCasesSpec.and(Specs.before("deadline", LocalDate.now())));
+        long openCases = caseCounts.value("open");
+        long overdueCases = caseCounts.value("overdue");
         var monthFinance = financeSummary(financeMonth);
         var allFinance = financeSummary(financeScope);
         long submittedUnitCount = reportRepository.count(submittedReports);
@@ -78,16 +91,15 @@ public class ReportingService {
 
         var alerts = new ArrayList<AlertItem>();
         if (overdueCases > 0) alerts.add(new AlertItem("danger", "Vụ việc quá hạn", overdueCases + " vụ việc cần cập nhật lý do/ETA"));
-        long incompleteWelfare = welfareRepository.count(welfareMonth.and(
-                Specs.eq("documentStatus", DocumentStatus.INCOMPLETE)));
+        long incompleteWelfare = welfareCounts.value("incompleteDocuments");
         if (incompleteWelfare > 0) alerts.add(new AlertItem("warning", "Hồ sơ chăm lo thiếu chứng từ", incompleteWelfare + " hồ sơ cần bổ sung"));
         if (monthFinance.incompleteDocuments() > 0) alerts.add(new AlertItem("warning", "Chứng từ tài chính chưa đủ", monthFinance.incompleteDocuments() + " giao dịch cần hoàn thiện"));
         if (pendingReports > 0) alerts.add(new AlertItem("info", "Báo cáo chưa nộp", pendingReports + " đơn vị chưa gửi báo cáo tháng"));
 
         return new DashboardSummary(
                 unitCount,
-                memberRepository.count(memberScope.and(Specs.eq("employmentStatus", EmploymentStatus.ACTIVE))),
-                memberRepository.count(memberScope.and(Specs.eq("membershipStatus", MembershipStatus.MEMBER))),
+                memberCounts.value("active"),
+                memberCounts.value("unionMembers"),
                 completionRate,
                 openCases,
                 overdueCases,
@@ -99,12 +111,12 @@ public class ReportingService {
     }
 
     private FinanceSummary financeSummary(Specification<FinanceEntry> scope) {
-        BigDecimal income = aggregates.sum(FinanceEntry.class,
-                scope.and(Specs.eq("entryType", FinanceEntryType.INCOME)), "amount");
-        BigDecimal expense = aggregates.sum(FinanceEntry.class,
-                scope.and(Specs.eq("entryType", FinanceEntryType.EXPENSE)), "amount");
-        long incomplete = financeRepository.count(scope.and(Specs.eq("documentStatus", DocumentStatus.INCOMPLETE)));
-        return new FinanceSummary(income, expense, income.subtract(expense), incomplete);
+        var totals = aggregates.financeTotals(scope);
+        return new FinanceSummary(
+                totals.income(),
+                totals.expense(),
+                totals.income().subtract(totals.expense()),
+                totals.incompleteDocuments());
     }
 
     public FinanceSummary financeSummary(YearMonth month, Long unitId) {

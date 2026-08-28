@@ -63,11 +63,15 @@ public class PulseSurveyService {
     public ListFacets facets(ListQuery query) {
         Specification<PulseSurvey> scope = Specs.nullSafe(Specs.unitScope(scopedUnitId(query)));
         Specification<PulseSurvey> filtered = Specs.nullSafe(filter(query));
+        var counts = aggregates.countMetrics(PulseSurvey.class, filtered, Map.of(
+                "active", Specs.eq("status", SurveyStatus.ACTIVE),
+                "closed", Specs.eq("status", SurveyStatus.CLOSED),
+                "draft", Specs.eq("status", SurveyStatus.DRAFT)));
         Map<String, Number> metrics = new LinkedHashMap<>();
-        metrics.put("total", surveyRepository.count(filtered));
-        metrics.put("active", surveyRepository.count(filtered.and(Specs.eq("status", SurveyStatus.ACTIVE))));
-        metrics.put("closed", surveyRepository.count(filtered.and(Specs.eq("status", SurveyStatus.CLOSED))));
-        metrics.put("draft", surveyRepository.count(filtered.and(Specs.eq("status", SurveyStatus.DRAFT))));
+        metrics.put("total", counts.total());
+        metrics.put("active", counts.value("active"));
+        metrics.put("closed", counts.value("closed"));
+        metrics.put("draft", counts.value("draft"));
         return new ListFacets(
                 surveyRepository.count(scope),
                 aggregates.distinctValues(PulseSurvey.class, scope, "status"),

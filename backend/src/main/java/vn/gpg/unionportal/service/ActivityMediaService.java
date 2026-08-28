@@ -14,6 +14,7 @@ import vn.gpg.unionportal.model.*;
 import vn.gpg.unionportal.model.DomainEnums.ActivityMediaType;
 import vn.gpg.unionportal.repository.ActivityMediaRepository;
 import vn.gpg.unionportal.repository.UnionActivityRepository;
+import vn.gpg.unionportal.spec.SpecAggregates;
 import vn.gpg.unionportal.spec.Specs;
 import vn.gpg.unionportal.spec.WorkspaceSpecs;
 
@@ -32,13 +33,16 @@ public class ActivityMediaService {
     private final UnionActivityRepository activities;
     private final CurrentUserService currentUser;
     private final RealtimeEventPublisher events;
+    private final SpecAggregates aggregates;
 
     public ActivityMediaService(ActivityMediaRepository media, UnionActivityRepository activities,
-                                CurrentUserService currentUser, RealtimeEventPublisher events) {
+                                CurrentUserService currentUser, RealtimeEventPublisher events,
+                                SpecAggregates aggregates) {
         this.media = media;
         this.activities = activities;
         this.currentUser = currentUser;
         this.events = events;
+        this.aggregates = aggregates;
     }
 
     public List<ActivityMediaView> list(Long activityId) {
@@ -62,10 +66,13 @@ public class ActivityMediaService {
         Specification<ActivityMedia> scope = Specs.nullSafe(Specs.unitScopeVia("activity", scopedUnitId()));
         ListQuery anyType = new ListQuery(null, null, true, query.q(), query.searchField(), query.unitId(), null, null);
         Specification<ActivityMedia> withoutType = filter(anyType, activityId, activityStatus);
+        var counts = aggregates.countMetrics(ActivityMedia.class, withoutType, Map.of(
+                "photos", Specs.eq("mediaType", ActivityMediaType.PHOTO),
+                "documents", Specs.eq("mediaType", ActivityMediaType.DOCUMENT)));
         Map<String, Number> metrics = new LinkedHashMap<>();
-        metrics.put("total", media.count(withoutType));
-        metrics.put("photos", media.count(withoutType.and(Specs.eq("mediaType", ActivityMediaType.PHOTO))));
-        metrics.put("documents", media.count(withoutType.and(Specs.eq("mediaType", ActivityMediaType.DOCUMENT))));
+        metrics.put("total", counts.total());
+        metrics.put("photos", counts.value("photos"));
+        metrics.put("documents", counts.value("documents"));
         return new ListFacets(media.count(scope), List.of("PHOTO", "DOCUMENT"), metrics);
     }
 

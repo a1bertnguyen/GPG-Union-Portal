@@ -15,6 +15,7 @@ import vn.gpg.unionportal.repository.UnionUnitRepository;
 import vn.gpg.unionportal.dto.UserAccountModels.UserAccountRequest;
 import vn.gpg.unionportal.dto.UserAccountModels.UserAccountView;
 import vn.gpg.unionportal.spec.AdminUserSpecs;
+import vn.gpg.unionportal.spec.SpecAggregates;
 import vn.gpg.unionportal.spec.Specs;
 
 import java.util.LinkedHashMap;
@@ -31,17 +32,20 @@ public class UserAccountService {
     private final PasswordEncoder passwordEncoder;
     private final CurrentUserService currentUser;
     private final RealtimeEventPublisher events;
+    private final SpecAggregates aggregates;
 
     public UserAccountService(AdminUserRepository repository,
                               UnionUnitRepository unitRepository,
                               PasswordEncoder passwordEncoder,
                               CurrentUserService currentUser,
-                              RealtimeEventPublisher events) {
+                              RealtimeEventPublisher events,
+                              SpecAggregates aggregates) {
         this.repository = repository;
         this.unitRepository = unitRepository;
         this.passwordEncoder = passwordEncoder;
         this.currentUser = currentUser;
         this.events = events;
+        this.aggregates = aggregates;
     }
 
     @Transactional(readOnly = true)
@@ -64,10 +68,13 @@ public class UserAccountService {
     @Transactional(readOnly = true)
     public ListFacets facets(ListQuery query) {
         Specification<AdminUser> filtered = Specs.nullSafe(AdminUserSpecs.filter(query));
+        var counts = aggregates.countMetrics(AdminUser.class, filtered, Map.of(
+                "activeAdmins", Specs.<AdminUser>eq("role", "ADMIN").and(Specs.isTrue("active")),
+                "activeUsers", Specs.<AdminUser>eq("role", "USER").and(Specs.isTrue("active"))));
         Map<String, Number> metrics = new LinkedHashMap<>();
-        metrics.put("total", repository.count(filtered));
-        metrics.put("activeAdmins", repository.countByRoleAndActiveTrue("ADMIN"));
-        metrics.put("activeUsers", repository.countByRoleAndActiveTrue("USER"));
+        metrics.put("total", counts.total());
+        metrics.put("activeAdmins", counts.value("activeAdmins"));
+        metrics.put("activeUsers", counts.value("activeUsers"));
         return new ListFacets(repository.count(), List.of("ACTIVE", "INACTIVE"), metrics);
     }
 

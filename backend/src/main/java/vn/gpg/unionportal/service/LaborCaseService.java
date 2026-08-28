@@ -59,17 +59,23 @@ public class LaborCaseService {
         Specification<LaborCase> scope = Specs.nullSafe(Specs.unitScope(scopedUnitId(query)));
         Specification<LaborCase> filtered = Specs.nullSafe(filter(query));
         Specification<LaborCase> open = filtered.and(Specs.notEq("status", CaseStatus.CLOSED));
+        var counts = aggregates.countMetrics(LaborCase.class, filtered, Map.of(
+                "open", open,
+                "dueOrOverdue", open.and(Specs.onOrBefore("deadline", today)),
+                "overdue", open.and(Specs.before("deadline", today)),
+                "highSeverity", Specs.in("severity", List.of(CaseSeverity.HIGH, CaseSeverity.CRITICAL)),
+                "closed", Specs.eq("status", CaseStatus.CLOSED),
+                "wideImpact", Specs.atLeast("affectedPeople", WIDE_IMPACT_THRESHOLD),
+                "repeated", LaborCaseSpecs.repeated(scopedUnitId(query))));
         Map<String, Number> metrics = new LinkedHashMap<>();
-        metrics.put("total", repository.count(filtered));
-        metrics.put("open", repository.count(open));
-        metrics.put("dueOrOverdue", repository.count(open.and(Specs.onOrBefore("deadline", today))));
-        metrics.put("overdue", repository.count(open.and(Specs.before("deadline", today))));
-        metrics.put("highSeverity", repository.count(filtered.and(
-                Specs.in("severity", List.of(CaseSeverity.HIGH, CaseSeverity.CRITICAL)))));
-        metrics.put("closed", repository.count(filtered.and(Specs.eq("status", CaseStatus.CLOSED))));
-        metrics.put("wideImpact", repository.count(filtered.and(
-                Specs.atLeast("affectedPeople", WIDE_IMPACT_THRESHOLD))));
-        metrics.put("repeated", repository.count(filtered.and(LaborCaseSpecs.repeated(scopedUnitId(query)))));
+        metrics.put("total", counts.total());
+        metrics.put("open", counts.value("open"));
+        metrics.put("dueOrOverdue", counts.value("dueOrOverdue"));
+        metrics.put("overdue", counts.value("overdue"));
+        metrics.put("highSeverity", counts.value("highSeverity"));
+        metrics.put("closed", counts.value("closed"));
+        metrics.put("wideImpact", counts.value("wideImpact"));
+        metrics.put("repeated", counts.value("repeated"));
         metrics.put("affectedPeople", aggregates.sumLong(LaborCase.class, filtered, "affectedPeople"));
         return new ListFacets(
                 repository.count(scope),

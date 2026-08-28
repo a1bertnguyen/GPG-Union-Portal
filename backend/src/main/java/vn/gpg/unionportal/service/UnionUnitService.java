@@ -53,11 +53,15 @@ public class UnionUnitService {
     public ListFacets facets(ListQuery query) {
         Specification<UnionUnit> scope = Specs.nullSafe(ownScope());
         Specification<UnionUnit> filtered = Specs.nullSafe(filter(query));
+        var counts = aggregates.countMetrics(UnionUnit.class, filtered, Map.of(
+                "active", Specs.eq("legalStatus", LegalStatus.ACTIVE),
+                "inactive", Specs.eq("legalStatus", LegalStatus.INACTIVE),
+                "withChairperson", Specs.isPresent("chairperson")));
         Map<String, Number> metrics = new LinkedHashMap<>();
-        metrics.put("total", repository.count(filtered));
-        metrics.put("active", repository.count(filtered.and(Specs.eq("legalStatus", LegalStatus.ACTIVE))));
-        metrics.put("inactive", repository.count(filtered.and(Specs.eq("legalStatus", LegalStatus.INACTIVE))));
-        metrics.put("withChairperson", repository.count(filtered.and(Specs.isPresent("chairperson"))));
+        metrics.put("total", counts.total());
+        metrics.put("active", counts.value("active"));
+        metrics.put("inactive", counts.value("inactive"));
+        metrics.put("withChairperson", counts.value("withChairperson"));
         return new ListFacets(
                 repository.count(scope),
                 aggregates.distinctValues(UnionUnit.class, scope, "legalStatus"),

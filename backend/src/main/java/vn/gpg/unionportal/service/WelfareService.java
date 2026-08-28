@@ -55,16 +55,21 @@ public class WelfareService {
         LocalDate today = LocalDate.now();
         Specification<WelfareRecord> scope = Specs.nullSafe(Specs.unitScope(scopedUnitId(query)));
         Specification<WelfareRecord> filtered = Specs.nullSafe(filter(query));
+        var counts = aggregates.countMetrics(WelfareRecord.class, filtered, Map.of(
+                "birthday", Specs.eq("welfareType", WelfareType.BIRTHDAY),
+                "visit", Specs.eq("welfareType", WelfareType.VISIT),
+                "funeralOrWedding", Specs.in("welfareType", List.of(WelfareType.FUNERAL, WelfareType.WEDDING)),
+                "unfinished", Specs.notIn("status", List.of(WorkStatus.COMPLETED, WorkStatus.CANCELLED)),
+                "newRequests", Specs.eq("status", WorkStatus.NEW),
+                "due", dueSoon(today)));
         Map<String, Number> metrics = new LinkedHashMap<>();
-        metrics.put("total", repository.count(filtered));
-        metrics.put("birthday", repository.count(filtered.and(Specs.eq("welfareType", WelfareType.BIRTHDAY))));
-        metrics.put("visit", repository.count(filtered.and(Specs.eq("welfareType", WelfareType.VISIT))));
-        metrics.put("funeralOrWedding", repository.count(filtered.and(
-                Specs.in("welfareType", List.of(WelfareType.FUNERAL, WelfareType.WEDDING)))));
-        metrics.put("unfinished", repository.count(filtered.and(
-                Specs.notIn("status", List.of(WorkStatus.COMPLETED, WorkStatus.CANCELLED)))));
-        metrics.put("newRequests", repository.count(filtered.and(Specs.eq("status", WorkStatus.NEW))));
-        metrics.put("due", repository.count(filtered.and(dueSoon(today))));
+        metrics.put("total", counts.total());
+        metrics.put("birthday", counts.value("birthday"));
+        metrics.put("visit", counts.value("visit"));
+        metrics.put("funeralOrWedding", counts.value("funeralOrWedding"));
+        metrics.put("unfinished", counts.value("unfinished"));
+        metrics.put("newRequests", counts.value("newRequests"));
+        metrics.put("due", counts.value("due"));
         return new ListFacets(
                 repository.count(scope),
                 aggregates.distinctValues(WelfareRecord.class, scope, "status"),

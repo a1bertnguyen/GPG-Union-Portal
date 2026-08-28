@@ -6,17 +6,23 @@ import jakarta.persistence.criteria.CriteriaQuery;
 import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Selection;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Component;
 import vn.gpg.unionportal.dto.ApiModels.CaseGroupCount;
 import vn.gpg.unionportal.model.DomainEnums.CaseStatus;
+import vn.gpg.unionportal.model.DomainEnums.DocumentStatus;
+import vn.gpg.unionportal.model.DomainEnums.FinanceEntryType;
+import vn.gpg.unionportal.model.FinanceEntry;
 import vn.gpg.unionportal.model.LaborCase;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Aggregates that {@code JpaSpecificationExecutor} does not offer — sums, distinct values and
@@ -31,6 +37,73 @@ public class SpecAggregates {
 
     public SpecAggregates(EntityManager entityManager) {
         this.entityManager = entityManager;
+    }
+
+    public record CountMetrics(long total, Map<String, Long> values) {
+        public long value(String key) {
+            return values.getOrDefault(key, 0L);
+        }
+    }
+
+    public record FinanceTotals(BigDecimal income, BigDecimal expense, long incompleteDocuments) {
+    }
+
+    /**
+     * Count a scope and several conditional subsets in one database round trip. Each metric
+     * specification is evaluated as a SQL CASE expression over the already-scoped rows.
+     */
+    public <T> CountMetrics countMetrics(Class<T> type, Specification<T> scope,
+                                         Map<String, Specification<T>> metrics) {
+        CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+        CriteriaQuery<Object[]> query = cb.createQuery(Object[].class);
+        Root<T> root = query.from(type);
+        List<Selection<?>> selections = new ArrayList<>();
+        selections.add(cb.count(root));
+
+        for (Specification<T> metric : metrics.values()) {
+            Predicate predicate = metric == null ? cb.conjunction() : metric.toPredicate(root, query, cb);
+            Expression<Long> flag = cb.<Long>selectCase()
+                    .when(predicate == null ? cb.conjunction() : predicate, 1L)
+                    .otherwise(0L);
+            selections.add(cb.coalesce(cb.sum(flag), 0L));
+        }
+
+        query.multiselect(selections);
+        applyWhere(query, scope, root, cb);
+        Object[] row = entityManager.createQuery(query).getSingleResult();
+
+        Map<String, Long> values = new LinkedHashMap<>();
+        int index = 1;
+        for (String key : metrics.keySet()) values.put(key, toLong(row[index++]));
+        return new CountMetrics(toLong(row[0]), Map.copyOf(values));
+    }
+
+    /** Income, expense and incomplete-document count from the same scoped finance query. */
+    public FinanceTotals financeTotals(Specification<FinanceEntry> scope) {
+        CriteriaBuilder cb = entityManager.getCriteriaBuilder();
+        CriteriaQuery<Object[]> query = cb.createQuery(Object[].class);
+        Root<FinanceEntry> root = query.from(FinanceEntry.class);
+        Expression<BigDecimal> amount = root.get("amount");
+        Expression<BigDecimal> income = cb.<BigDecimal>selectCase()
+                .when(cb.equal(root.get("entryType"), FinanceEntryType.INCOME), amount)
+                .otherwise(BigDecimal.ZERO);
+        Expression<BigDecimal> expense = cb.<BigDecimal>selectCase()
+                .when(cb.equal(root.get("entryType"), FinanceEntryType.EXPENSE), amount)
+                .otherwise(BigDecimal.ZERO);
+        Expression<Long> incomplete = cb.<Long>selectCase()
+                .when(cb.equal(root.get("documentStatus"), DocumentStatus.INCOMPLETE), 1L)
+                .otherwise(0L);
+
+        query.multiselect(
+                cb.coalesce(cb.sum(income), BigDecimal.ZERO),
+                cb.coalesce(cb.sum(expense), BigDecimal.ZERO),
+                cb.coalesce(cb.sum(incomplete), 0L));
+        applyWhere(query, scope, root, cb);
+        Object[] row = entityManager.createQuery(query).getSingleResult();
+        return new FinanceTotals(
+                row[0] instanceof BigDecimal value ? value : BigDecimal.ZERO,
+                row[1] instanceof BigDecimal value ? value : BigDecimal.ZERO,
+                toLong(row[2]));
     }
 
     /** {@code SUM(field)} over the rows matching {@code spec}; zero when nothing matches. */

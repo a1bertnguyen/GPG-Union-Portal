@@ -52,14 +52,18 @@ public class ActivityService {
     public ListFacets facets(ListQuery query) {
         Specification<UnionActivity> scope = Specs.nullSafe(Specs.unitScope(scopedUnitId(query)));
         Specification<UnionActivity> filtered = Specs.nullSafe(filter(query));
+        var counts = aggregates.countMetrics(UnionActivity.class, filtered, Map.of(
+                "planned", Specs.eq("status", ActivityStatus.PLANNED),
+                "inProgress", Specs.eq("status", ActivityStatus.IN_PROGRESS),
+                "completed", Specs.eq("status", ActivityStatus.COMPLETED),
+                "missingReport", Specs.<UnionActivity>eq("status", ActivityStatus.COMPLETED)
+                        .and(Specs.isFalse("reportCompleted"))));
         Map<String, Number> metrics = new LinkedHashMap<>();
-        metrics.put("total", repository.count(filtered));
-        metrics.put("planned", repository.count(filtered.and(Specs.eq("status", ActivityStatus.PLANNED))));
-        metrics.put("inProgress", repository.count(filtered.and(Specs.eq("status", ActivityStatus.IN_PROGRESS))));
-        metrics.put("completed", repository.count(filtered.and(Specs.eq("status", ActivityStatus.COMPLETED))));
-        metrics.put("missingReport", repository.count(filtered
-                .and(Specs.eq("status", ActivityStatus.COMPLETED))
-                .and(Specs.isFalse("reportCompleted"))));
+        metrics.put("total", counts.total());
+        metrics.put("planned", counts.value("planned"));
+        metrics.put("inProgress", counts.value("inProgress"));
+        metrics.put("completed", counts.value("completed"));
+        metrics.put("missingReport", counts.value("missingReport"));
         return new ListFacets(
                 repository.count(scope),
                 aggregates.distinctValues(UnionActivity.class, scope, "status"),

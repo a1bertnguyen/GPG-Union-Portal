@@ -61,11 +61,15 @@ public class MemberService {
     public ListFacets facets(ListQuery query) {
         Specification<Member> scope = Specs.nullSafe(Specs.unitScope(scopedUnitId(query)));
         Specification<Member> filtered = Specs.nullSafe(filter(query));
+        var counts = aggregates.countMetrics(Member.class, filtered, Map.of(
+                "unionMembers", Specs.eq("membershipStatus", MembershipStatus.MEMBER),
+                "notJoined", Specs.eq("membershipStatus", MembershipStatus.NOT_JOINED),
+                "activeEmployment", Specs.eq("employmentStatus", EmploymentStatus.ACTIVE)));
         Map<String, Number> metrics = new LinkedHashMap<>();
-        metrics.put("total", repository.count(filtered));
-        metrics.put("unionMembers", repository.count(filtered.and(Specs.eq("membershipStatus", MembershipStatus.MEMBER))));
-        metrics.put("notJoined", repository.count(filtered.and(Specs.eq("membershipStatus", MembershipStatus.NOT_JOINED))));
-        metrics.put("activeEmployment", repository.count(filtered.and(Specs.eq("employmentStatus", EmploymentStatus.ACTIVE))));
+        metrics.put("total", counts.total());
+        metrics.put("unionMembers", counts.value("unionMembers"));
+        metrics.put("notJoined", counts.value("notJoined"));
+        metrics.put("activeEmployment", counts.value("activeEmployment"));
         return new ListFacets(
                 repository.count(scope),
                 aggregates.distinctValues(Member.class, scope, "membershipStatus"),

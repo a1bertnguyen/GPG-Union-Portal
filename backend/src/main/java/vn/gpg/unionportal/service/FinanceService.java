@@ -10,15 +10,12 @@ import vn.gpg.unionportal.dto.ApiModels.ListFacets;
 import vn.gpg.unionportal.dto.ListQuery;
 import vn.gpg.unionportal.exception.ResourceNotFoundException;
 import vn.gpg.unionportal.mapper.EntityMapper;
-import vn.gpg.unionportal.model.DomainEnums.DocumentStatus;
-import vn.gpg.unionportal.model.DomainEnums.FinanceEntryType;
 import vn.gpg.unionportal.model.FinanceEntry;
 import vn.gpg.unionportal.repository.FinanceEntryRepository;
 import vn.gpg.unionportal.spec.FinanceSpecs;
 import vn.gpg.unionportal.spec.SpecAggregates;
 import vn.gpg.unionportal.spec.Specs;
 
-import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -54,17 +51,13 @@ public class FinanceService {
     public ListFacets facets(ListQuery query) {
         Specification<FinanceEntry> scope = Specs.nullSafe(Specs.unitScope(scopedUnitId(query)));
         Specification<FinanceEntry> filtered = Specs.nullSafe(filter(query));
-        BigDecimal income = aggregates.sum(FinanceEntry.class,
-                filtered.and(Specs.eq("entryType", FinanceEntryType.INCOME)), "amount");
-        BigDecimal expense = aggregates.sum(FinanceEntry.class,
-                filtered.and(Specs.eq("entryType", FinanceEntryType.EXPENSE)), "amount");
+        var totals = aggregates.financeTotals(filtered);
         Map<String, Number> metrics = new LinkedHashMap<>();
         metrics.put("total", repository.count(filtered));
-        metrics.put("income", income);
-        metrics.put("expense", expense);
-        metrics.put("balance", income.subtract(expense));
-        metrics.put("incompleteDocuments", repository.count(filtered.and(
-                Specs.eq("documentStatus", DocumentStatus.INCOMPLETE))));
+        metrics.put("income", totals.income());
+        metrics.put("expense", totals.expense());
+        metrics.put("balance", totals.income().subtract(totals.expense()));
+        metrics.put("incompleteDocuments", totals.incompleteDocuments());
         return new ListFacets(
                 repository.count(scope),
                 aggregates.distinctValues(FinanceEntry.class, scope, "entryType"),
