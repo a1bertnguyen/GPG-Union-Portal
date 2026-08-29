@@ -1,0 +1,9 @@
+ALTER TABLE labor_cases ADD COLUMN employee_code VARCHAR(40);
+ALTER TABLE labor_cases ADD COLUMN job_title VARCHAR(150);
+ALTER TABLE labor_cases ADD COLUMN workplace VARCHAR(200);
+ALTER TABLE labor_cases ADD COLUMN start_work_date DATE;
+ALTER TABLE labor_cases ADD COLUMN leave_date DATE;
+ALTER TABLE labor_cases ADD COLUMN phone VARCHAR(30);
+ALTER TABLE labor_cases ADD COLUMN response_date DATE;
+ALTER TABLE labor_cases ADD COLUMN approved_by VARCHAR(120);
+ALTER TABLE labor_cases ADD COLUMN approved_at TIMESTAMP;

@@ -24,9 +24,21 @@ export const welfareColumns: ColumnConfig[] = [
   { label: 'Trạng thái', render: item => <StatusBadge value={item.status} /> }, { label: 'Chứng từ', render: item => <StatusBadge value={item.documentStatus} /> },
 ]
 
+export const welfarePolicyColumns: ColumnConfig[] = [
+  { label: 'Mã', render: item => <strong>{text(item, 'code')}</strong> },
+  { label: 'Nguồn', render: item => enumLabel(item.source) },
+  { label: 'TT', render: item => text(item, 'sequenceNumber') },
+  { label: 'Loại', render: item => enumLabel(item.welfareType) },
+  { label: 'Nội dung', render: item => text(item, 'name') },
+  { label: 'Mức hỗ trợ', render: item => formatMoney(item.supportAmount as number) },
+  { label: 'Thời hạn', render: item => `${text(item, 'processingWeeks')} tuần` },
+  { label: 'Trạng thái', render: item => <StatusBadge value={item.active ? 'ACTIVE' : 'INACTIVE'} /> },
+]
+
 export const caseColumns: ColumnConfig[] = [
-  { label: 'Mã', render: item => <strong>{text(item, 'caseCode')}</strong> }, { label: 'Đơn vị', render: item => item.unionUnit?.code ?? '—' },
-  { label: 'Người gửi', render: item => text(item, 'requesterName') }, { label: 'Nhóm vấn đề', render: item => text(item, 'issueGroup') }, { label: 'Mức độ', render: item => <StatusBadge value={item.severity} /> },
+  { label: 'Mã', render: item => <strong>{text(item, 'caseCode')}</strong> }, { label: 'Mã NV', render: item => text(item, 'employeeCode') },
+  { label: 'Người gửi', render: item => text(item, 'requesterName') }, { label: 'Nơi làm việc', render: item => text(item, 'workplace') },
+  { label: 'Nhóm vấn đề', render: item => text(item, 'issueGroup') }, { label: 'Mức độ', render: item => <StatusBadge value={item.severity} /> },
   { label: 'PIC', render: item => text(item, 'ownerName') }, { label: 'Deadline', render: item => formatDate(item.deadline) },
   { label: 'Trạng thái', render: item => <StatusBadge value={item.status} /> },
 ]

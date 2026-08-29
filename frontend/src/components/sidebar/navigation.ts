@@ -5,7 +5,6 @@ export type PageKey =
   | 'dashboardCases'
   | 'dashboardActivities'
   | 'dashboardFinance'
-  | 'dashboardVoice'
   | 'units'
   | 'members'
   | 'memberChanges'
@@ -17,10 +16,12 @@ export type PageKey =
   | 'caseReports'
   | 'caseAnalytics'
   | 'activities'
+  | 'activityReports'
   | 'activityGallery'
   | 'finance'
-  | 'voice'
+  | 'documents'
   | 'reports'
+  | 'kpi'
   | 'users'
 
 export type SidebarNavItem = {
@@ -45,7 +46,6 @@ export const navGroups: SidebarNavGroup[] = [
     { key: 'dashboardCases', label: 'Vụ việc', mark: 'VV' },
     { key: 'dashboardActivities', label: 'Hoạt động', mark: 'HĐ' },
     { key: 'dashboardFinance', label: 'Tài chính', mark: 'TC' },
-    { key: 'dashboardVoice', label: 'Tiếng nói NLĐ', mark: 'TN' },
   ] },
   { label: 'Nghiệp vụ', items: [
     { key: 'members', label: 'Đoàn viên', mark: 'ĐV', children: [
@@ -61,15 +61,17 @@ export const navGroups: SidebarNavGroup[] = [
       { key: 'caseAnalytics', label: 'Phân tích', mark: 'PT' },
     ] },
     { key: 'activities', label: 'Hoạt động', mark: 'HĐ', children: [
-      { key: 'activityGallery', label: 'Ảnh & tài liệu', mark: 'TL' },
+      { key: 'activityReports', label: 'Báo cáo chương trình', mark: 'BC' },
+      { key: 'activityGallery', label: 'Ảnh & tài liệu báo cáo', mark: 'TL' },
     ] },
-    { key: 'voice', label: 'Tiếng nói NLĐ', mark: 'TN' },
+    { key: 'documents', label: 'Kho tài liệu', mark: 'KT' },
     { key: 'finance', label: 'Tài chính nội bộ', mark: 'TC' },
     { key: 'reports', label: 'Báo cáo', mark: 'BC' },
   ] },
   { label: 'Quản trị', items: [
     { key: 'units', label: 'CĐCS / BCH', mark: 'ĐV', adminOnly: true },
     { key: 'users', label: 'Tài khoản', mark: 'TK', adminOnly: true },
+    { key: 'kpi', label: 'Xét KPI CĐCS', mark: 'KPI', adminOnly: true },
   ] },
 ]
 

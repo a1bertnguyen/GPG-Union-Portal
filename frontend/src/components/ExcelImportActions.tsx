@@ -7,6 +7,8 @@ type Props = {
   filename: string
   importLabel?: string
   templateLabel?: string
+  downloadPath?: string
+  canImport?: boolean
   disabled?: boolean
   onImported?: (result: SpreadsheetImportResult) => void | Promise<void>
   onError?: (message: string) => void
@@ -17,6 +19,8 @@ export default function ExcelImportActions({
   filename,
   importLabel = 'Nhập Excel',
   templateLabel = 'Tải mẫu Excel',
+  downloadPath,
+  canImport = true,
   disabled = false,
   onImported,
   onError,
@@ -26,7 +30,7 @@ export default function ExcelImportActions({
   const download = async () => {
     setBusy('download')
     try {
-      await downloadFile(`/spreadsheets/${resource}/template.xlsx`, filename)
+      await downloadFile(downloadPath ?? `/spreadsheets/${resource}/template.xlsx`, filename)
     } catch (err) {
       onError?.(err instanceof Error ? err.message : 'Không thể tải file Excel mẫu')
     } finally {
@@ -54,14 +58,14 @@ export default function ExcelImportActions({
       <button className="button button--ghost" disabled={isBusy} onClick={() => void download()}>
         {busy === 'download' ? 'Đang tạo mẫu…' : templateLabel}
       </button>
-      <label className={`button button--ghost ${isBusy ? 'button--disabled' : ''}`}>
+      {canImport && <label className={`button button--ghost ${isBusy ? 'button--disabled' : ''}`}>
         {busy === 'import' ? 'Đang nhập…' : importLabel}
         <input type="file" hidden accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" disabled={isBusy} onChange={event => {
           const file = event.target.files?.[0]
           if (file) void upload(file)
           event.target.value = ''
         }} />
-      </label>
+      </label>}
     </>
   )
 }

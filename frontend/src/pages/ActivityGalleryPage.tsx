@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useState, type ComponentProps, type FormEvent } from 'react'
-import { api, apiAll, downloadFile, enumLabel, formatDate, formatMoney, loadFileUrl } from '../api'
-import ExcelImportActions from '../components/ExcelImportActions'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { api, apiAll, downloadFile, enumLabel, formatDate, loadFileUrl } from '../api'
 import ListCard from '../components/ListCard'
 import TableFilterBar, { FilterField } from '../components/TableFilterBar'
 import { usePagedList } from '../hooks/usePagedList'
-import { importSummary } from '../excel'
 import type { ActivityMedia, BaseRecord, UnionUnit } from '../types'
 
 type LibraryView = 'PHOTO' | 'DOCUMENT'
@@ -29,8 +27,9 @@ function AuthenticatedImage({ item }: { item: ActivityMedia }) {
   return src ? <img src={src} alt={item.title ?? item.activityName} /> : <div className="gallery-placeholder">ẢNH</div>
 }
 
-export default function ActivityGalleryPage({ units, onCreateActivity }: { units: UnionUnit[]; onCreateActivity: () => void }) {
+export default function ActivityGalleryPage({ units }: { units: UnionUnit[] }) {
   const [activityOptions, setActivityOptions] = useState<BaseRecord[]>([])
+  const [allMedia, setAllMedia] = useState<ActivityMedia[]>([])
   const [activeView, setActiveView] = useState<LibraryView>('PHOTO')
   const [activityId, setActivityId] = useState('')
   const [title, setTitle] = useState('')
@@ -40,7 +39,6 @@ export default function ActivityGalleryPage({ units, onCreateActivity }: { units
   const [unitFilter, setUnitFilter] = useState('')
   const [search, setSearch] = useState('')
   const [actionError, setActionError] = useState('')
-  const [transferMessage, setTransferMessage] = useState('')
   const [saving, setSaving] = useState(false)
 
   // `status` is the activity lifecycle state on this screen; the media list carries it separately from
@@ -63,7 +61,9 @@ export default function ActivityGalleryPage({ units, onCreateActivity }: { units
 
   // The upload form needs every activity the account can see, not the page below it.
   useEffect(() => {
-    apiAll<BaseRecord>('/activities').then(setActivityOptions).catch(() => setActivityOptions([]))
+    Promise.all([apiAll<BaseRecord>('/activities'), apiAll<ActivityMedia>('/activity-media')])
+      .then(([activityRows, mediaRows]) => { setActivityOptions(activityRows); setAllMedia(mediaRows) })
+      .catch(() => { setActivityOptions([]); setAllMedia([]) })
   }, [])
 
   const isPhotoView = activeView === 'PHOTO'
@@ -80,6 +80,11 @@ export default function ActivityGalleryPage({ units, onCreateActivity }: { units
 
   const refreshAll = async () => {
     await Promise.all([media.reload(), activities.reload()])
+    const [activityRows, mediaRows] = await Promise.all([
+      apiAll<BaseRecord>('/activities'), apiAll<ActivityMedia>('/activity-media'),
+    ])
+    setActivityOptions(activityRows)
+    setAllMedia(mediaRows)
   }
 
   const upload = async (event: FormEvent) => {
@@ -97,7 +102,7 @@ export default function ActivityGalleryPage({ units, onCreateActivity }: { units
       setFile(null)
       setTitle('')
       setFileInputKey(value => value + 1)
-      await media.reload()
+      await refreshAll()
     } catch (err) {
       const label = isPhotoView ? 'ảnh' : 'tài liệu'
       setActionError(err instanceof Error ? err.message : `Không thể tải ${label} hoạt động`)
@@ -110,22 +115,9 @@ export default function ActivityGalleryPage({ units, onCreateActivity }: { units
     if (!window.confirm(`Xóa tệp “${item.title ?? item.fileName}”?`)) return
     try {
       await api(`/activity-media/${item.id}`, { method: 'DELETE' })
-      await media.reload()
+      await refreshAll()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Không thể xóa tệp hoạt động')
-    }
-  }
-
-  const handlePlanImported = async (result: Parameters<NonNullable<ComponentProps<typeof ExcelImportActions>['onImported']>>[0]) => {
-    await refreshAll()
-    setActivityOptions(await apiAll<BaseRecord>('/activities').catch(() => []))
-    const summary = importSummary(result)
-    if (result.errors.length) {
-      setTransferMessage('')
-      setActionError(`${summary} Lỗi: ${result.errors.slice(0, 3).join(' · ')}`)
-    } else {
-      setActionError('')
-      setTransferMessage(summary)
     }
   }
 
@@ -151,29 +143,17 @@ export default function ActivityGalleryPage({ units, onCreateActivity }: { units
   return <section className="page-section">
     <div className="page-heading">
       <div>
-        <p className="eyebrow">Hoạt động / Thư viện</p>
-        <h1>Thư viện hoạt động</h1>
-        <p>Ảnh sự kiện và hồ sơ, chứng từ được quản lý riêng theo từng hoạt động.</p>
-      </div>
-      <div className="page-actions">
-        <ExcelImportActions
-          resource="activities"
-          filename="mau-ke-hoach-hoat-dong.xlsx"
-          templateLabel="Tải mẫu kế hoạch"
-          importLabel="Nhập kế hoạch Excel"
-          onError={message => { setTransferMessage(''); setActionError(message) }}
-          onImported={handlePlanImported}
-        />
-        <button type="button" className="button button--primary" onClick={onCreateActivity}>+ Tạo hoạt động mới</button>
+        <p className="eyebrow">Hoạt động / Chứng cứ báo cáo</p>
+        <h1>Ảnh & tài liệu báo cáo</h1>
+        <p>Quản lý ảnh minh chứng và chứng từ bắt buộc theo từng chương trình trước khi USER nộp báo cáo.</p>
       </div>
     </div>
 
     {error && <div className="alert alert--danger">{error}</div>}
-    {transferMessage && <div className="alert alert--success">{transferMessage}</div>}
 
     <div className="notice">
-      <strong>Khung chương trình được tạo từ dữ liệu hoạt động</strong>
-      <span>Tạo thủ công bằng nút “Tạo hoạt động mới” hoặc nhập nhiều kế hoạch từ file Excel. Sau đó chọn hoạt động để tải ảnh và tài liệu liên quan.</span>
+      <strong>Chứng cứ bắt buộc của báo cáo</strong>
+      <span>Mỗi báo cáo cần ít nhất 1 ảnh và 1 chứng từ. Danh sách tham dự và phản hồi được nhập tại mục “Báo cáo chương trình”.</span>
     </div>
 
     <div className="library-switch" role="tablist" aria-label="Loại thư viện hoạt động">
@@ -184,7 +164,7 @@ export default function ActivityGalleryPage({ units, onCreateActivity }: { units
         className={`library-switch__button${isPhotoView ? ' is-active' : ''}`}
         onClick={() => switchView('PHOTO')}
       >
-        <span>Ảnh hoạt động</span>
+        <span>Ảnh minh chứng</span>
         <small>{media.facets.metrics.photos ?? 0} ảnh</small>
       </button>
       <button
@@ -194,15 +174,15 @@ export default function ActivityGalleryPage({ units, onCreateActivity }: { units
         className={`library-switch__button${!isPhotoView ? ' is-active' : ''}`}
         onClick={() => switchView('DOCUMENT')}
       >
-        <span>Tài liệu / chứng từ</span>
+        <span>Chứng từ báo cáo</span>
         <small>{media.facets.metrics.documents ?? 0} tệp</small>
       </button>
     </div>
 
     <form className="data-card upload-strip library-upload" onSubmit={event => void upload(event)}>
       <div>
-        <p className="eyebrow">{isPhotoView ? 'Tải ảnh' : 'Tải tài liệu'}</p>
-        <strong>{isPhotoView ? 'Ảnh check-in hoặc khoảnh khắc hoạt động' : 'Kế hoạch, kịch bản, biên bản hoặc chứng từ hoạt động'}</strong>
+        <p className="eyebrow">Minh chứng bắt buộc</p>
+        <strong>{isPhotoView ? 'Ảnh check-in, triển khai hoặc kết quả chương trình' : 'Hóa đơn, chứng từ, biên bản hoặc tài liệu kết quả'}</strong>
       </div>
       <select required value={activityId} onChange={event => setActivityId(event.target.value)} aria-label="Hoạt động">
         <option value="">Chọn hoạt động…</option>
@@ -211,7 +191,7 @@ export default function ActivityGalleryPage({ units, onCreateActivity }: { units
       <input
         value={title}
         onChange={event => setTitle(event.target.value)}
-        placeholder={isPhotoView ? 'Chú thích ảnh…' : 'Tên hoặc mô tả tài liệu…'}
+        placeholder={isPhotoView ? 'Mô tả ảnh minh chứng…' : 'Tên chứng từ / tài liệu báo cáo…'}
         aria-label={isPhotoView ? 'Chú thích ảnh' : 'Tên tài liệu'}
       />
       <input
@@ -232,7 +212,7 @@ export default function ActivityGalleryPage({ units, onCreateActivity }: { units
       className="list-card--grid"
       unit={isPhotoView ? 'ảnh' : 'tệp'}
       title={`${media.total} ${isPhotoView ? 'ảnh' : 'tệp'}`}
-      subtitle={isPhotoView ? 'Kho ảnh hoạt động' : 'Kho tài liệu và chứng từ'}
+      subtitle={isPhotoView ? 'Ảnh dùng làm minh chứng báo cáo' : 'Chứng từ và tài liệu đính kèm báo cáo'}
       actions={<>
         {filtersActive && <button className="button button--ghost" onClick={() => { setSearch(''); setUnitFilter(''); setStatus('') }}>Xóa lọc</button>}
         <button className="button button--ghost" onClick={() => void refreshAll()}>Làm mới</button>
@@ -265,45 +245,52 @@ export default function ActivityGalleryPage({ units, onCreateActivity }: { units
       className="list-card--grid list-card--spaced"
       unit="hoạt động"
       title={`${activities.total} hoạt động`}
-      subtitle="Theo dõi trước, trong và sau chương trình"
-      actions={<button className="button button--ghost" onClick={() => void activities.reload()}>Làm mới</button>}
+      subtitle="Kiểm tra mức độ sẵn sàng trước khi nộp báo cáo chương trình"
+      actions={<button className="button button--ghost" onClick={() => void refreshAll()}>Làm mới</button>}
     >
       {activities.loading
-        ? <div className="empty-state">Đang tải hoạt động…</div>
+        ? <div className="empty-state">Đang kiểm tra chứng cứ báo cáo…</div>
         : !activities.rows.length
           ? <div className="empty-state">{filtersActive ? 'Không có hoạt động phù hợp bộ lọc.' : 'Chưa có hoạt động.'}</div>
-          : <div className="activity-lifecycle-grid">{activities.rows.map(item => <article className="data-card lifecycle-card" key={item.id}>
-              <div className="lifecycle-card__head">
-                <div>
-                  <strong>{String(item.name)}</strong>
-                  <span>{String(item.activityCode)} · {item.unionUnit?.code} · {formatDate(item.eventDate)}</span>
+          : <div className="report-evidence-grid">{activities.rows.map(item => {
+              const evidence = allMedia.filter(mediaItem => mediaItem.activityId === item.id)
+              const photoCount = evidence.filter(mediaItem => mediaItem.mediaType === 'PHOTO').length
+              const documentCount = evidence.filter(mediaItem => mediaItem.mediaType === 'DOCUMENT').length
+              const checks = [
+                ['Ảnh minh chứng', photoCount > 0, `${photoCount} tệp`],
+                ['Chứng từ', documentCount > 0, `${documentCount} tệp`],
+                ['Danh sách tham dự', Boolean(item.participantList), item.participantList ? 'Đã có' : 'Chưa có'],
+                ['Phản hồi', Boolean(item.quickFeedback), item.quickFeedback ? 'Đã có' : 'Chưa có'],
+              ] as const
+
+              return <article className="data-card report-evidence-card" key={item.id}>
+                <div className="lifecycle-card__head">
+                  <div>
+                    <strong>{String(item.name)}</strong>
+                    <span>{String(item.activityCode)} · {item.unionUnit?.code} · {formatDate(item.eventDate)}</span>
+                  </div>
+                  <b>{enumLabel(item.status)}</b>
                 </div>
-                <b>{enumLabel(item.status)}</b>
-              </div>
-              <div className="lifecycle-columns">
-                <section>
-                  <span>Trước chương trình</span>
-                  <small>Mục tiêu: {String(item.objective ?? 'chưa có')}</small>
-                  <small>Ngân sách: {formatMoney(item.plannedBudget as number)}</small>
-                  <small>Danh sách: {item.participantList ? 'đã có' : 'chưa có'}</small>
-                  <small>Phê duyệt: {item.status === 'PLANNED' ? 'đang chờ' : 'đã qua bước duyệt'}</small>
-                </section>
-                <section>
-                  <span>Trong chương trình</span>
-                  <small>Check-in: {Number(item.checkInCount ?? 0)}/{Number(item.participantCount ?? 0)}</small>
-                  <small>Phản hồi: {String(item.quickFeedback ?? 'chưa có')}</small>
-                  <small>Phát sinh: {String(item.issues ?? 'không ghi nhận')}</small>
-                </section>
-                <section>
-                  <span>Sau chương trình</span>
-                  <small>Chi phí: {formatMoney(item.actualCost as number)}</small>
-                  <small>Chứng từ: {enumLabel(item.documentStatus)}</small>
-                  <small>Đánh giá: {item.usefulnessScore ? `${item.usefulnessScore}/5` : 'chưa có'}</small>
-                  <small>Follow-up: {String(item.followUpOwner ?? 'chưa giao')}</small>
-                  <small>Bài học: {String(item.lessonsLearned ?? 'chưa có')}</small>
-                </section>
-              </div>
-            </article>)}</div>}
+                <div className="report-evidence-checks">
+                  {checks.map(([label, complete, detail]) => <div className={`report-evidence-check ${complete ? 'report-evidence-check--complete' : 'report-evidence-check--missing'}`} key={label}>
+                    <span>{complete ? '✓' : '!'}</span>
+                    <div>
+                      <strong>{label}</strong>
+                      <small>{detail}</small>
+                    </div>
+                  </div>)}
+                </div>
+                <div className="report-evidence-card__footer">
+                  <span className={`status status--${item.reportCompleted ? 'success' : 'warning'}`}>
+                    {item.reportCompleted ? 'Đã hoàn tất báo cáo' : 'Chưa hoàn tất báo cáo'}
+                  </span>
+                  <button type="button" className="button button--ghost" onClick={() => {
+                    setActivityId(String(item.id))
+                    window.scrollTo({ top: 0, behavior: 'smooth' })
+                  }}>Chọn để tải tệp</button>
+                </div>
+              </article>
+            })}</div>}
     </ListCard>
   </section>
 }

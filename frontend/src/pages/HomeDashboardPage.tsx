@@ -3,12 +3,12 @@ import { api, apiAll, enumLabel, formatDate } from '../api'
 import type { PageKey } from '../components/sidebar/navigation'
 import type { BaseRecord } from '../types'
 
-type Props = { unitName?: string; onNavigate: (page: PageKey) => void }
+type Props = { unitName?: string; isAdmin: boolean; onNavigate: (page: PageKey) => void }
 
 const iso = (date: Date) => date.toISOString().slice(0, 10)
 const isOpen = (item: BaseRecord) => !['CLOSED', 'COMPLETED', 'CANCELLED'].includes(String(item.status ?? ''))
 
-export default function HomeDashboardPage({ unitName, onNavigate }: Props) {
+export default function HomeDashboardPage({ unitName, isAdmin, onNavigate }: Props) {
   const [cases, setCases] = useState<BaseRecord[]>([])
   const [welfare, setWelfare] = useState<BaseRecord[]>([])
   const [activities, setActivities] = useState<BaseRecord[]>([])
@@ -49,6 +49,8 @@ export default function HomeDashboardPage({ unitName, onNavigate }: Props) {
     openCases.forEach(item => groupCounts.set(String(item.issueGroup ?? ''), (groupCounts.get(String(item.issueGroup ?? '')) ?? 0) + 1))
     const repeated = openCases.filter(item => (groupCounts.get(String(item.issueGroup ?? '')) ?? 0) > 1)
     const manyAffected = openCases.filter(item => Number(item.affectedPeople ?? 0) >= 10)
+    const urgentEscalation = openCases.filter(item => Number(item.affectedPeople ?? 0) >= 10
+      || ['HIGH', 'CRITICAL'].includes(String(item.severity ?? '')))
     const birthday = welfare.filter(item => item.welfareType === 'BIRTHDAY' && isOpen(item)
       && String(item.eventDate ?? '') >= today && String(item.eventDate ?? '') <= nextWeek)
     const incompleteCare = welfare.filter(item => ['FUNERAL', 'WEDDING'].includes(String(item.welfareType ?? ''))
@@ -57,11 +59,12 @@ export default function HomeDashboardPage({ unitName, onNavigate }: Props) {
     const runningActivities = activities.filter(item => item.status === 'IN_PROGRESS')
     const followUps = activities.filter(item => item.followUpDeadline && String(item.followUpDeadline) <= today && !item.reportCompleted)
     const pendingReports = reports.filter(item => item.status === 'DRAFT')
-    return { due24, overdue, repeated, manyAffected, birthday, incompleteCare, unsettled, runningActivities, followUps, pendingReports }
+    return { due24, overdue, repeated, manyAffected, urgentEscalation, birthday, incompleteCare, unsettled, runningActivities, followUps, pendingReports }
   }, [activities, cases, reports, welfare])
 
   const tasks = [
-    ...summary.overdue.map(item => ({ tone: 'danger', title: `${item.caseCode} · ${item.issueGroup}`, detail: `Quá hạn từ ${formatDate(item.deadline)} · PIC ${item.ownerName}`, page: 'cases' as PageKey })),
+    ...summary.urgentEscalation.map(item => ({ tone: 'danger', title: `${item.caseCode} · cần báo ngay`, detail: 'CĐ GPG / Ban CSNLĐ · không chờ báo cáo tháng', page: 'caseReports' as PageKey })),
+    ...summary.overdue.filter(item => !summary.urgentEscalation.includes(item)).map(item => ({ tone: 'danger', title: `${item.caseCode} · ${item.issueGroup}`, detail: `Quá hạn từ ${formatDate(item.deadline)} · PIC ${item.ownerName}`, page: 'cases' as PageKey })),
     ...summary.due24.map(item => ({ tone: 'warning', title: `${item.caseCode} · đến hạn trong 24h`, detail: `${item.issueGroup} · ${Number(item.affectedPeople ?? 0)} NLĐ ảnh hưởng`, page: 'cases' as PageKey })),
     ...summary.birthday.map(item => ({ tone: 'info', title: `Sinh nhật · ${item.beneficiaryName}`, detail: `Ngày ${formatDate(item.eventDate)} · cần chuẩn bị trước 7 ngày`, page: 'welfare' as PageKey })),
     ...summary.incompleteCare.map(item => ({ tone: 'warning', title: `${enumLabel(item.welfareType)} · ${item.beneficiaryName}`, detail: 'Hồ sơ/biên nhận chưa hoàn tất', page: 'welfareDocuments' as PageKey })),
@@ -70,10 +73,14 @@ export default function HomeDashboardPage({ unitName, onNavigate }: Props) {
 
   return <section className="page-section home-dashboard">
     <div className="page-heading">
-      <div><p className="eyebrow">Trang chủ dành cho USER</p><h1>Công việc cần xử lý hôm nay</h1><p>{unitName ?? 'Công đoàn thành viên'} · tập trung các việc đến hạn, cảnh báo và hồ sơ còn thiếu.</p></div>
+      <div><p className="eyebrow">{isAdmin ? 'Bảng điều hành toàn hệ thống' : 'Bảng điều hành CĐCS'}</p><h1>Công việc cần xử lý hôm nay</h1><p>{isAdmin ? 'Toàn hệ thống' : unitName ?? 'Công đoàn thành viên'} · tập trung các việc đến hạn, cảnh báo và hồ sơ còn thiếu.</p></div>
       <button className="button button--ghost" onClick={() => void load()}>Làm mới</button>
     </div>
     {error && <div className="alert alert--danger">{error}</div>}
+    {summary.urgentEscalation.length > 0 && <button className="alert alert--danger case-escalation-alert case-escalation-alert--button" onClick={() => onNavigate('caseReports')}>
+      <strong>Báo ngay CĐ GPG / Ban CSNLĐ</strong>
+      <span>{summary.urgentEscalation.length} vụ việc đang mở ảnh hưởng nhiều NLĐ hoặc có rủi ro cao. Không chờ báo cáo tháng.</span>
+    </button>}
     <div className="today-alert-grid">
       <button onClick={() => onNavigate('cases')}><span>Đến hạn 24h</span><strong>{summary.due24.length}</strong><small>Cần ưu tiên phản hồi</small></button>
       <button className="today-alert--danger" onClick={() => onNavigate('cases')}><span>Quá hạn</span><strong>{summary.overdue.length}</strong><small>Cần cập nhật lý do và ETA</small></button>

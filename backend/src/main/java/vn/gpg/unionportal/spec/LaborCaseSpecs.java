@@ -70,6 +70,12 @@ public final class LaborCaseSpecs {
             case "receivedDate" -> Specs.valueLike(cb, root.get("receivedDate"), text);
             case "unionUnitId" -> Specs.unitLike(cb, root.get("unionUnit"), text);
             case "requesterName" -> Specs.textLike(cb, root.get("requesterName"), text);
+            case "employeeCode" -> Specs.textLike(cb, root.get("employeeCode"), text);
+            case "jobTitle" -> Specs.textLike(cb, root.get("jobTitle"), text);
+            case "workplace" -> Specs.textLike(cb, root.get("workplace"), text);
+            case "startWorkDate" -> Specs.valueLike(cb, root.get("startWorkDate"), text);
+            case "leaveDate" -> Specs.valueLike(cb, root.get("leaveDate"), text);
+            case "phone" -> Specs.textLike(cb, root.get("phone"), text);
             case "source" -> Specs.textLike(cb, root.get("source"), text);
             case "issueGroup" -> Specs.textLike(cb, root.get("issueGroup"), text);
             case "severity" -> Specs.enumLike(cb, root.get("severity"), CaseSeverity.class, text);
@@ -80,10 +86,15 @@ public final class LaborCaseSpecs {
             case "description" -> Specs.textLike(cb, root.get("description"), text);
             case "attachmentNote" -> Specs.textLike(cb, root.get("attachmentNote"), text);
             case "resultText" -> Specs.textLike(cb, root.get("resultText"), text);
+            case "responseDate" -> Specs.valueLike(cb, root.get("responseDate"), text);
             case "overdueReason" -> Specs.textLike(cb, root.get("overdueReason"), text);
             default -> cb.or(
                     Specs.textLike(cb, root.get("caseCode"), text),
                     Specs.textLike(cb, root.get("requesterName"), text),
+                    Specs.textLike(cb, root.get("employeeCode"), text),
+                    Specs.textLike(cb, root.get("jobTitle"), text),
+                    Specs.textLike(cb, root.get("workplace"), text),
+                    Specs.textLike(cb, root.get("phone"), text),
                     Specs.textLike(cb, root.get("source"), text),
                     Specs.textLike(cb, root.get("issueGroup"), text),
                     Specs.textLike(cb, root.get("ownerName"), text),
@@ -92,6 +103,9 @@ public final class LaborCaseSpecs {
                     Specs.textLike(cb, root.get("resultText"), text),
                     Specs.textLike(cb, root.get("overdueReason"), text),
                     Specs.valueLike(cb, root.get("receivedDate"), text),
+                    Specs.valueLike(cb, root.get("startWorkDate"), text),
+                    Specs.valueLike(cb, root.get("leaveDate"), text),
+                    Specs.valueLike(cb, root.get("responseDate"), text),
                     Specs.valueLike(cb, root.get("deadline"), text),
                     Specs.valueLike(cb, root.get("affectedPeople"), text),
                     Specs.enumLike(cb, root.get("severity"), CaseSeverity.class, text),

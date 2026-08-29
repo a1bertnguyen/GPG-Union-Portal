@@ -48,6 +48,73 @@ export interface BaseRecord {
   [key: string]: unknown
 }
 
+export interface WelfarePolicy extends BaseRecord {
+  code: string
+  source: 'UNION' | 'COMPANY'
+  sequenceNumber: number
+  welfareType: string
+  name: string
+  supportAmount: number
+  eligibilityNotes?: string
+  processingWeeks: number
+  active: boolean
+}
+
+export interface WelfareRecord extends BaseRecord {
+  recordCode: string
+  policyId?: number
+  policyName?: string
+  welfareType: string
+  beneficiaryName: string
+  eventDate: string
+  deadline?: string
+  status: string
+  amount: number
+  standardAmount?: number
+  documentStatus: string
+  receiptStatus: string
+  hasImage: boolean
+  notes?: string
+}
+
+export interface LaborCase extends BaseRecord {
+  caseCode: string
+  receivedDate: string
+  requesterName: string
+  employeeCode?: string
+  jobTitle?: string
+  workplace?: string
+  startWorkDate?: string
+  leaveDate?: string
+  phone?: string
+  source?: string
+  issueGroup: string
+  severity: string
+  ownerName?: string
+  deadline?: string
+  status: string
+  description: string
+  affectedPeople: number
+  attachmentNote?: string
+  resultText?: string
+  responseDate?: string
+  overdueReason?: string
+  approvedBy?: string
+  approvedAt?: string
+}
+
+export interface WelfareDocument {
+  id: number
+  welfareRecordId: number
+  recordCode: string
+  documentType: 'SUPPORTING_DOCUMENT' | 'RECEIPT' | 'IMAGE'
+  fileName: string
+  contentType: string
+  fileSize: number
+  uploadedBy: string
+  createdAt: string
+}
+
 export interface AlertItem {
   level: 'danger' | 'warning' | 'info'
   title: string
@@ -63,13 +130,14 @@ export interface DashboardSummary {
   overdueCaseCount: number
   monthIncome: number
   monthExpense: number
-  allTimeBalance: number
   pendingReportCount: number
   alerts: AlertItem[]
 }
 
 export interface MonthlyReport {
   id: number
+  unionUnit: UnionUnit
+  reportMonth: string
   preparedBy: string
   planNextMonth?: string
   supportRequest?: string
@@ -83,6 +151,7 @@ export interface MonthlySummary {
   unionUnitName: string
   activeEmployees: number
   unionMembers: number
+  memberChanges: number
   welfareCases: number
   completedWelfareCases: number
   laborCases: number
@@ -91,6 +160,7 @@ export interface MonthlySummary {
   participants: number
   income: number
   expense: number
+  advance: number
   netChange: number
   incompleteDocuments: number
   narrative?: MonthlyReport
@@ -222,4 +292,49 @@ export interface ActivityMedia {
   fileSize: number
   uploadedBy: string
   createdAt: string
+}
+
+export interface FinanceDocument {
+  id: number
+  financeEntryId: number
+  entryCode: string
+  fileName: string
+  contentType: string
+  fileSize: number
+  uploadedBy: string
+  createdAt: string
+}
+
+export interface DocumentLibraryItem {
+  id: number
+  unionUnit: UnionUnit
+  category: string
+  title: string
+  description?: string
+  fileName: string
+  contentType: string
+  fileSize: number
+  uploadedBy: string
+  createdAt: string
+}
+
+export interface KpiCriterion {
+  code: string
+  label: string
+  target: string
+  actual: number
+  actualLabel: string
+  met: boolean
+  note: string
+}
+
+export interface UnitKpi {
+  unionUnitId: number
+  unionUnitCode: string
+  unionUnitName: string
+  month: string
+  score: number
+  rating: string
+  passedCriteria: number
+  criteria: KpiCriterion[]
 }

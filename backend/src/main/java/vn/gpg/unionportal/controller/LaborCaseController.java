@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import vn.gpg.unionportal.dto.ApiModels.CaseGroupCount;
+import vn.gpg.unionportal.dto.ApiModels.CaseApprovalRequest;
 import vn.gpg.unionportal.dto.ApiModels.LaborCaseRequest;
 import vn.gpg.unionportal.dto.ApiModels.ListFacets;
 import vn.gpg.unionportal.dto.ApiModels.PageResponse;
@@ -47,6 +48,17 @@ public class LaborCaseController {
     @PutMapping("/{id}")
     public LaborCase update(@PathVariable Long id, @Valid @RequestBody LaborCaseRequest request) {
         return service.update(id, request);
+    }
+
+    @PostMapping("/{id}/submit-approval")
+    public LaborCase submitForApproval(@PathVariable Long id) {
+        return service.submitForApproval(id);
+    }
+
+    @PostMapping("/{id}/approve")
+    public LaborCase approve(@PathVariable Long id,
+                             @Valid @RequestBody(required = false) CaseApprovalRequest approval) {
+        return service.approve(id, approval);
     }
 
     @DeleteMapping("/{id}")

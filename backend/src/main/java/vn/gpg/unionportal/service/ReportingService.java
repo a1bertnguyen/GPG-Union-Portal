@@ -24,6 +24,7 @@ import java.util.function.Predicate;
 public class ReportingService {
     private final UnionUnitRepository unitRepository;
     private final MemberRepository memberRepository;
+    private final MemberChangeRepository memberChangeRepository;
     private final WelfareRecordRepository welfareRepository;
     private final LaborCaseRepository caseRepository;
     private final UnionActivityRepository activityRepository;
@@ -32,11 +33,13 @@ public class ReportingService {
     private final SpecAggregates aggregates;
 
     public ReportingService(UnionUnitRepository unitRepository, MemberRepository memberRepository,
+                            MemberChangeRepository memberChangeRepository,
                             WelfareRecordRepository welfareRepository, LaborCaseRepository caseRepository,
                             UnionActivityRepository activityRepository, FinanceEntryRepository financeRepository,
                             MonthlyReportRepository reportRepository, SpecAggregates aggregates) {
         this.unitRepository = unitRepository;
         this.memberRepository = memberRepository;
+        this.memberChangeRepository = memberChangeRepository;
         this.welfareRepository = welfareRepository;
         this.caseRepository = caseRepository;
         this.activityRepository = activityRepository;
@@ -115,6 +118,7 @@ public class ReportingService {
         return new FinanceSummary(
                 totals.income(),
                 totals.expense(),
+                totals.advance(),
                 totals.income().subtract(totals.expense()),
                 totals.incompleteDocuments());
     }
@@ -132,6 +136,10 @@ public class ReportingService {
         Predicate<UnionUnit> unitFilter = candidate -> unitId == null || candidate.getId().equals(unitId);
 
         var members = memberRepository.findAll().stream().filter(m -> unitFilter.test(m.getUnionUnit())).toList();
+        long memberChanges = memberChangeRepository.findAll().stream()
+                .filter(change -> unitFilter.test(change.getMember().getUnionUnit()))
+                .filter(change -> inMonth(change.getEffectiveDate(), month))
+                .count();
         var welfare = welfareRepository.findAll().stream().filter(w -> unitFilter.test(w.getUnionUnit()))
                 .filter(w -> inMonth(w.getEventDate(), month)).toList();
         var cases = caseRepository.findAll().stream().filter(c -> unitFilter.test(c.getUnionUnit()))
@@ -148,17 +156,19 @@ public class ReportingService {
                 month.toString(), unitId, unit == null ? "Toàn hệ thống" : unit.getName(),
                 members.stream().filter(m -> m.getEmploymentStatus() == EmploymentStatus.ACTIVE).count(),
                 members.stream().filter(m -> m.getMembershipStatus() == MembershipStatus.MEMBER).count(),
+                memberChanges,
                 welfare.size(), welfare.stream().filter(w -> w.getStatus() == WorkStatus.COMPLETED).count(),
                 cases.size(), cases.stream().filter(c -> c.getStatus() == CaseStatus.CLOSED).count(),
                 activities.size(), activities.stream().mapToInt(UnionActivity::getParticipantCount).sum(),
-                finance.income(), finance.expense(), finance.balance(), finance.incompleteDocuments(), narrative);
+                finance.income(), finance.expense(), finance.advance(), finance.balance(), finance.incompleteDocuments(), narrative);
     }
 
     private FinanceSummary financeSummary(java.util.List<FinanceEntry> entries) {
         BigDecimal income = sum(entries, FinanceEntryType.INCOME);
-        BigDecimal expense = sum(entries, FinanceEntryType.EXPENSE);
+        BigDecimal advance = sum(entries, FinanceEntryType.ADVANCE);
+        BigDecimal expense = sum(entries, FinanceEntryType.EXPENSE).add(advance);
         long incomplete = entries.stream().filter(e -> e.getDocumentStatus() == DocumentStatus.INCOMPLETE).count();
-        return new FinanceSummary(income, expense, income.subtract(expense), incomplete);
+        return new FinanceSummary(income, expense, advance, income.subtract(expense), incomplete);
     }
 
     private BigDecimal sum(java.util.List<FinanceEntry> entries, FinanceEntryType type) {

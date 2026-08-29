@@ -31,24 +31,30 @@ export function ActivitiesDashboard({ records, month }: { records: BaseRecord[];
 export function FinanceDashboard({ records, units, month }: { records: BaseRecord[]; units: UnionUnit[]; month: string }) {
   const monthly = records.filter(item => String(item.transactionDate ?? '').startsWith(month))
   const income = sum(monthly.filter(item => item.entryType === 'INCOME'), 'amount')
-  const expense = sum(monthly.filter(item => item.entryType === 'EXPENSE'), 'amount')
+  const advance = sum(monthly.filter(item => item.entryType === 'ADVANCE'), 'amount')
+  const expense = sum(monthly.filter(item => ['EXPENSE', 'ADVANCE'].includes(String(item.entryType ?? ''))), 'amount')
+  const balance = income - expense
   const incomplete = monthly.filter(item => item.documentStatus === 'INCOMPLETE').length
   const unitRows = units.map(unit => {
     const entries = monthly.filter(item => item.unionUnit?.id === unit.id)
-    return [unit.code, formatMoney(sum(entries.filter(item => item.entryType === 'INCOME'), 'amount')), formatMoney(sum(entries.filter(item => item.entryType === 'EXPENSE'), 'amount')), String(entries.filter(item => item.documentStatus === 'INCOMPLETE').length)]
-  }).filter(row => row[1] !== formatMoney(0) || row[2] !== formatMoney(0))
+    const unitIncome = sum(entries.filter(item => item.entryType === 'INCOME'), 'amount')
+    const unitAdvance = sum(entries.filter(item => item.entryType === 'ADVANCE'), 'amount')
+    const unitExpense = sum(entries.filter(item => ['EXPENSE', 'ADVANCE'].includes(String(item.entryType ?? ''))), 'amount')
+    return [unit.code, formatMoney(unitIncome), formatMoney(unitExpense), formatMoney(unitAdvance), formatMoney(unitIncome - unitExpense), String(entries.filter(item => item.documentStatus === 'INCOMPLETE').length)]
+  }).filter(row => row[1] !== formatMoney(0) || row[2] !== formatMoney(0) || row[3] !== formatMoney(0))
   return <div id="dashboard-finance">
     <MetricGrid cards={[
       ['Tổng thu', formatMoney(income), `Kỳ ${month}`, 'green'],
-      ['Tổng chi', formatMoney(expense), `Kỳ ${month}`, 'orange'],
-      ['Chênh lệch trong kỳ', formatMoney(income - expense), 'Tính từ dữ liệu nhập nội bộ', 'blue'],
+      ['Tổng chi', formatMoney(expense), 'Đã bao gồm tạm ứng', 'orange'],
+      ['Tạm ứng', formatMoney(advance), 'Là một phần của tổng Chi', 'blue'],
+      ['Chênh lệch số dư', formatMoney(balance), 'Thu trừ tổng Chi', 'teal'],
       ['Chứng từ chưa đủ', incomplete, `${monthly.length} phiếu trong kỳ`, 'orange'],
     ]} />
     <div className="dashboard-grid">
       <article className="panel" id="finance-breakdown"><PanelHeading eyebrow="Cơ cấu thu – chi" title="Theo nhóm nghiệp vụ" /><BreakdownList rows={groupedAmount(monthly, 'category').map(([label, value]) => [label, formatMoney(value)])} /></article>
       <article className="panel"><PanelHeading eyebrow="Kiểm soát hồ sơ" title="Mức độ hoàn thiện" /><KpiLine label="Chứng từ hợp lệ/không yêu cầu" value={monthly.length ? Math.round((monthly.length - incomplete) * 100 / monthly.length) : 100} tone="green" /><div className="boundary-note"><strong>Ranh giới hệ thống</strong><span>Không chuyển tiền, không truy vấn số dư ngân hàng và không lưu thông tin tài khoản thanh toán.</span></div></article>
     </div>
-    <DashboardTable id="finance-units" title="Thu – chi theo đơn vị" columns={['Đơn vị', 'Thu', 'Chi', 'Chứng từ thiếu']} rows={unitRows} />
+    <DashboardTable id="finance-units" title="Thu • Chi • Tạm ứng theo đơn vị" columns={['Đơn vị', 'Thu', 'Chi', 'Tạm ứng', 'Chênh lệch số dư', 'Chứng từ thiếu']} rows={unitRows} />
   </div>
 }
 

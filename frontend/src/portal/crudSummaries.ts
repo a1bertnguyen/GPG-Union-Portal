@@ -7,7 +7,7 @@ const cards = (items: SummaryCard[]) => items
 export const memberPresetFilters = [{ value: 'missing', label: 'Dữ liệu còn thiếu' }]
 export const welfarePresetFilters = [
   { value: 'due', label: 'Đến hạn' },
-  { value: 'new', label: 'Yêu cầu mới' },
+  { value: 'new', label: 'Yêu cầu chờ duyệt' },
 ]
 export const casePresetFilters = [
   { value: 'due24', label: 'Đến hạn 24h' },
@@ -38,10 +38,16 @@ export const welfareSummary = (metrics: Record<string, number>) => cards([
   { label: 'Hiếu / hỷ', value: metric(metrics, 'funeralOrWedding'), tone: 'orange' },
   { label: 'Chưa hoàn tất', value: metric(metrics, 'unfinished'), tone: 'orange' },
 ])
+export const welfarePolicySummary = (metrics: Record<string, number>) => cards([
+  { label: 'Tổng chính sách', value: metric(metrics, 'total'), tone: 'blue' },
+  { label: 'Đang áp dụng', value: metric(metrics, 'active'), tone: 'green' },
+  { label: 'Công đoàn hỗ trợ', value: metric(metrics, 'union'), tone: 'teal' },
+  { label: 'Công ty hỗ trợ', value: metric(metrics, 'company'), tone: 'orange' },
+])
 export const caseSummary = (metrics: Record<string, number>) => cards([
   { label: 'Vụ việc đang mở', value: metric(metrics, 'open'), tone: 'blue' },
   { label: 'Sắp / quá hạn', value: metric(metrics, 'dueOrOverdue'), tone: 'orange' },
-  { label: 'Mức độ cao', value: metric(metrics, 'highSeverity'), tone: 'orange' },
+  { label: 'Chờ ADMIN duyệt', value: metric(metrics, 'pendingApproval'), tone: 'orange' },
   { label: 'Đã đóng', value: metric(metrics, 'closed'), tone: 'green' },
 ])
 export const activitySummary = (metrics: Record<string, number>) => cards([
@@ -53,6 +59,7 @@ export const activitySummary = (metrics: Record<string, number>) => cards([
 export const financeSummary = (metrics: Record<string, number>) => cards([
   { label: 'Tổng thu', value: formatMoney(metric(metrics, 'income')), tone: 'green' },
   { label: 'Tổng chi', value: formatMoney(metric(metrics, 'expense')), tone: 'orange' },
-  { label: 'Số dư nội bộ', value: formatMoney(metric(metrics, 'balance')), tone: 'blue' },
+  { label: 'Tạm ứng', value: formatMoney(metric(metrics, 'advance')), tone: 'blue' },
+  { label: 'Chênh lệch số dư', value: formatMoney(metric(metrics, 'balance')), tone: 'teal' },
   { label: 'Chứng từ chưa đủ', value: metric(metrics, 'incompleteDocuments'), tone: 'orange' },
 ])

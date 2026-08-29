@@ -68,7 +68,7 @@ export default function IntegrationsPage({ units }: Props) {
 
         <article className="panel integration-card">
           <div className="integration-card__icon integration-card__icon--finance">TC</div>
-          <div><p className="eyebrow">Kế toán nội bộ</p><h2>Nhập phiếu thu – chi</h2><p>Cập nhật đầy đủ trường theo mã phiếu bằng Excel; chỉ ghi nhận nội bộ, không phát sinh giao dịch tiền.</p></div>
+          <div><p className="eyebrow">Kế toán nội bộ</p><h2>Nhập phiếu thu • chi • tạm ứng</h2><p>Cập nhật đầy đủ trường theo mã phiếu bằng Excel; chỉ ghi nhận nội bộ, không phát sinh giao dịch tiền.</p></div>
           <div className="integration-actions"><ExcelImportActions resource="finance" filename="mau-tai-chinh-noi-bo.xlsx" importLabel="Nhập tài chính Excel" onImported={imported} onError={setActionError} /></div>
         </article>
 

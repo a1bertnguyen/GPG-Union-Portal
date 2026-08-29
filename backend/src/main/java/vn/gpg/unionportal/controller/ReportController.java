@@ -48,6 +48,11 @@ public class ReportController {
         return service.update(id, request);
     }
 
+    @PostMapping("/{id}/approve")
+    public MonthlyReport approve(@PathVariable Long id) {
+        return service.approve(id);
+    }
+
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long id) {

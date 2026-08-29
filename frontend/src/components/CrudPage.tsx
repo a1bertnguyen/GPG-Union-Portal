@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
 import { api, downloadFile, enumLabel } from '../api'
 import type { BaseRecord, UnionUnit } from '../types'
 import { importSummary } from '../excel'
@@ -7,18 +7,24 @@ import ListCard from './ListCard'
 import TableFilterBar, { FilterField } from './TableFilterBar'
 import { usePagedList } from '../hooks/usePagedList'
 
-type Option = { value: string; label: string }
+type Option = { value: string; label: string; disabled?: boolean }
 
 export type FieldConfig = {
   name: string
   label: string
-  type?: 'text' | 'date' | 'number' | 'email' | 'textarea' | 'select' | 'unit' | 'checkbox'
+  type?: 'text' | 'date' | 'time' | 'number' | 'email' | 'textarea' | 'select' | 'unit' | 'checkbox'
   required?: boolean
   placeholder?: string
   options?: Option[]
   step?: string
   wide?: boolean
   defaultValue?: string | boolean
+  min?: string
+  max?: string
+  readOnly?: boolean
+  hidden?: boolean
+  section?: string
+  sectionDescription?: string
 }
 
 export type ColumnConfig = {
@@ -49,7 +55,10 @@ type Props = {
   enableMemberExcel?: boolean
   excelResource?: string
   excelFilename?: string
+  excelDownloadPath?: string
+  excelDownloadLabel?: string
   canImportExcel?: boolean
+  canDownloadExcel?: boolean
   readOnly?: boolean
   readOnlyMessage?: string
   wideForm?: boolean
@@ -61,11 +70,14 @@ type Props = {
   presetFilters?: PresetFilter[]
   detailRenderer?: (item: BaseRecord, refresh: () => Promise<void>) => ReactNode
   detailActionLabel?: string
+  canEditItem?: (item: BaseRecord) => boolean
+  canDeleteItem?: (item: BaseRecord) => boolean
   openCreateInitially?: boolean
   onInitialCreateOpened?: () => void
+  deriveForm?: (form: FormState, changedField: string) => FormState
 }
 
-type FormState = Record<string, string | boolean>
+export type FormState = Record<string, string | boolean>
 
 export function StatusBadge({ value }: { value: unknown }) {
   const raw = String(value ?? '')
@@ -79,7 +91,7 @@ export function StatusBadge({ value }: { value: unknown }) {
   return <span className={`status status--${tone}`}>{enumLabel(value)}</span>
 }
 
-export default function CrudPage({ endpoint, title, description, singular, fields, columns, units, notice, enableMemberExcel = false, excelResource, excelFilename = 'mau-du-lieu.xlsx', canImportExcel = true, readOnly = false, readOnlyMessage, wideForm = false, summaryBuilder, presetFilters = [], detailRenderer, detailActionLabel = 'Mở', openCreateInitially = false, onInitialCreateOpened }: Props) {
+export default function CrudPage({ endpoint, title, description, singular, fields, columns, units, notice, enableMemberExcel = false, excelResource, excelFilename = 'mau-du-lieu.xlsx', excelDownloadPath, excelDownloadLabel, canImportExcel = true, canDownloadExcel = canImportExcel, readOnly = false, readOnlyMessage, wideForm = false, summaryBuilder, presetFilters = [], detailRenderer, detailActionLabel = 'Mở', canEditItem, canDeleteItem, openCreateInitially = false, onInitialCreateOpened, deriveForm }: Props) {
   const [formOpen, setFormOpen] = useState(openCreateInitially)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState<FormState>(() => openCreateInitially
@@ -112,7 +124,7 @@ export default function CrudPage({ endpoint, title, description, singular, field
   }, [onInitialCreateOpened, openCreateInitially])
 
   const hasUnit = fields.some(field => field.type === 'unit')
-  const searchableFields = useMemo(() => fields.filter(field => field.type !== 'checkbox'), [fields])
+  const searchableFields = useMemo(() => fields.filter(field => !field.hidden && field.type !== 'checkbox'), [fields])
   const selectedSearchField = searchableFields.find(field => field.name === searchField)
   const statusOptions = list.facets.statusValues
   const summaryCards = useMemo(() => summaryBuilder?.(list.facets.metrics) ?? [], [list.facets.metrics, summaryBuilder])
@@ -192,6 +204,13 @@ export default function CrudPage({ endpoint, title, description, singular, field
     }
   }
 
+  const updateField = (name: string, value: string | boolean) => {
+    setForm(current => {
+      const next = { ...current, [name]: value }
+      return deriveForm?.(next, name) ?? next
+    })
+  }
+
   const actionColumn = !readOnly || Boolean(detailRenderer)
   const columnCount = columns.length + (actionColumn ? 1 : 0)
   const error = actionError || list.error
@@ -206,7 +225,9 @@ export default function CrudPage({ endpoint, title, description, singular, field
         </div>
         <div className="page-actions" id="page-actions">
           {enableMemberExcel && <button className="button button--ghost" onClick={() => void downloadFile(exportPath, 'doan-vien.xlsx').catch(err => setActionError(err instanceof Error ? err.message : 'Không thể xuất Excel'))}>Xuất Excel</button>}
-          {excelResource && canImportExcel && <ExcelImportActions resource={excelResource} filename={excelFilename}
+          {excelResource && (canImportExcel || canDownloadExcel) && <ExcelImportActions resource={excelResource} filename={excelFilename}
+            downloadPath={excelDownloadPath} templateLabel={excelDownloadLabel}
+            canImport={canImportExcel}
             onError={message => { setTransferMessage(''); setActionError(message) }} onImported={async result => {
               const summary = importSummary(result)
               if (result.errors.length) { setTransferMessage(''); setActionError(`${summary} Lỗi: ${result.errors.slice(0, 3).join(' · ')}`) }
@@ -261,8 +282,8 @@ export default function CrudPage({ endpoint, title, description, singular, field
                   {columns.map(column => <td key={column.label} className={column.className}>{column.render(item)}</td>)}
                   {actionColumn && <td className="actions-cell">
                     {detailRenderer && <button className="icon-button icon-button--view" onClick={() => setViewingItem(item)}>{detailActionLabel}</button>}
-                    {!readOnly && <button className="icon-button" onClick={() => openEdit(item)}>Sửa</button>}
-                    {!readOnly && <button className="icon-button icon-button--danger" onClick={() => void remove(item)}>Xóa</button>}
+                    {!readOnly && (canEditItem?.(item) ?? true) && <button className="icon-button" onClick={() => openEdit(item)}>Sửa</button>}
+                    {!readOnly && (canDeleteItem?.(item) ?? true) && <button className="icon-button icon-button--danger" onClick={() => void remove(item)}>Xóa</button>}
                   </td>}
                 </tr>
               ))}
@@ -279,34 +300,40 @@ export default function CrudPage({ endpoint, title, description, singular, field
               <button className="modal__close" onClick={() => setFormOpen(false)}>×</button>
             </div>
             <form onSubmit={event => void submit(event)} className={wideForm ? 'form-grid form-grid--wide' : 'form-grid'}>
-              {fields.map(field => (
-                <label key={field.name} className={field.wide ? 'field field--wide' : 'field'}>
-                  <span>{field.label}{field.required && <b> *</b>}</span>
-                  {field.type === 'textarea' ? (
-                    <textarea required={field.required} value={String(form[field.name] ?? '')} placeholder={field.placeholder}
-                      onChange={event => setForm(current => ({ ...current, [field.name]: event.target.value }))} />
-                  ) : field.type === 'select' ? (
-                    <select required={field.required} value={String(form[field.name] ?? '')}
-                      onChange={event => setForm(current => ({ ...current, [field.name]: event.target.value }))}>
-                      <option value="">Chọn…</option>
-                      {field.options?.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </select>
-                  ) : field.type === 'unit' ? (
-                    <select required={field.required} value={String(form[field.name] ?? '')}
-                      onChange={event => setForm(current => ({ ...current, [field.name]: event.target.value }))}>
-                      <option value="">Chọn CĐCS…</option>
-                      {units.map(unit => <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>)}
-                    </select>
-                  ) : field.type === 'checkbox' ? (
-                    <input type="checkbox" className="checkbox" checked={Boolean(form[field.name])}
-                      onChange={event => setForm(current => ({ ...current, [field.name]: event.target.checked }))} />
-                  ) : (
-                    <input type={field.type ?? 'text'} required={field.required} step={field.step}
-                      value={String(form[field.name] ?? '')} placeholder={field.placeholder}
-                      onChange={event => setForm(current => ({ ...current, [field.name]: event.target.value }))} />
-                  )}
-                </label>
-              ))}
+                {fields.map(field => field.hidden ? null : (
+                  <Fragment key={field.name}>
+                    {field.section && <div className="form-section-heading field--wide">
+                      <strong>{field.section}</strong>
+                      {field.sectionDescription && <span>{field.sectionDescription}</span>}
+                    </div>}
+                    <label className={field.wide ? 'field field--wide' : 'field'}>
+                      <span>{field.label}{field.required && <b> *</b>}</span>
+                      {field.type === 'textarea' ? (
+                        <textarea required={field.required} readOnly={field.readOnly} value={String(form[field.name] ?? '')} placeholder={field.placeholder}
+                          onChange={event => updateField(field.name, event.target.value)} />
+                      ) : field.type === 'select' ? (
+                        <select required={field.required} disabled={field.readOnly} value={String(form[field.name] ?? '')}
+                          onChange={event => updateField(field.name, event.target.value)}>
+                          <option value="">Chọn…</option>
+                          {field.options?.map(option => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}
+                        </select>
+                      ) : field.type === 'unit' ? (
+                        <select required={field.required} disabled={field.readOnly} value={String(form[field.name] ?? '')}
+                          onChange={event => updateField(field.name, event.target.value)}>
+                          <option value="">Chọn CĐCS…</option>
+                          {units.map(unit => <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>)}
+                        </select>
+                      ) : field.type === 'checkbox' ? (
+                        <input type="checkbox" className="checkbox" disabled={field.readOnly} checked={Boolean(form[field.name])}
+                          onChange={event => updateField(field.name, event.target.checked)} />
+                      ) : (
+                        <input type={field.type ?? 'text'} required={field.required} step={field.step} min={field.min} max={field.max} readOnly={field.readOnly}
+                          value={String(form[field.name] ?? '')} placeholder={field.placeholder}
+                          onChange={event => updateField(field.name, event.target.value)} />
+                      )}
+                    </label>
+                  </Fragment>
+                ))}
               {formError && <div className="alert alert--danger field--wide">{formError}</div>}
               <div className="form-actions field--wide">
                 <button type="button" className="button button--ghost" onClick={() => setFormOpen(false)}>Hủy</button>

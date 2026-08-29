@@ -34,7 +34,7 @@ public final class WelfareSpecs {
                         cb.notEqual(root.get("status"), WorkStatus.COMPLETED),
                         cb.lessThanOrEqualTo(dueDate, today.plusDays(1)));
             };
-            case "new" -> (root, criteria, cb) -> cb.equal(root.get("status"), WorkStatus.NEW);
+            case "new" -> (root, criteria, cb) -> cb.equal(root.get("status"), WorkStatus.PENDING_APPROVAL);
             default -> null;
         };
     }

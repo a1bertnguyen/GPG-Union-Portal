@@ -97,7 +97,7 @@ class SpreadsheetImportServiceTests {
                 "activityCode", "XLS-ACT", "name", "Hoạt động Excel", "unitCode", "XLS-UNIT",
                 "eventDate", "2026-04-01", "status", "APPROVED", "objective", "Kết nối NLĐ",
                 "plannedBudget", "3000000", "actualCost", "1500000", "participantCount", "25",
-                "usefulnessScore", "4.5", "reportCompleted", "TRUE", "followUpOwner", "PIC Follow-up",
+                "usefulnessScore", "4.5", "reportCompleted", "FALSE", "followUpOwner", "PIC Follow-up",
                 "followUpDeadline", "2026-04-10"));
         assertSuccessful("finance", values(
                 "entryCode", "XLS-FIN", "unitCode", "XLS-UNIT", "transactionDate", "2026-04-02",
@@ -155,6 +155,46 @@ class SpreadsheetImportServiceTests {
         assertThat(blocked.run().getStatus()).isEqualTo(IntegrationStatus.FAILED);
         assertThat(blocked.errors()).anyMatch(error -> error.contains("chỉ được truy cập dữ liệu thuộc CĐCS"));
         assertThat(memberRepository.findByEmployeeCodeIgnoreCase("XLS-CROSS-SCOPE")).isEmpty();
+    }
+
+    @Test
+    void userExportsAndImportsOnlyMonthlyReportsFromTheirAssignedUnit() throws Exception {
+        assertSuccessful("reports", values(
+                "unitCode", "VCS", "month", "2034-01", "preparedBy", "Người lập VCS",
+                "planNextMonth", "Kế hoạch VCS", "supportRequest", "Hỗ trợ VCS", "status", "DRAFT"));
+        assertSuccessful("reports", values(
+                "unitCode", "GPL", "month", "2034-01", "preparedBy", "Người lập GPL",
+                "planNextMonth", "Kế hoạch GPL", "supportRequest", "Hỗ trợ GPL", "status", "DRAFT"));
+
+        authenticateUserForUnit(1L);
+        byte[] exported = service.exportReports("2034-01", null);
+        try (var workbook = WorkbookFactory.create(new ByteArrayInputStream(exported))) {
+            var sheet = workbook.getSheet("Dữ liệu");
+            assertThat(sheet.getLastRowNum()).isEqualTo(1);
+            assertThat(sheet.getRow(1).getCell(0).getStringCellValue()).isEqualTo("VCS");
+            assertThat(sheet.getRow(1).getCell(1).getStringCellValue()).isEqualTo("2034-01");
+        }
+
+        var ownSubmission = service.importWorkbook("reports", workbook("reports", values(
+                "unitCode", "VCS", "month", "2034-01", "preparedBy", "USER VCS",
+                "planNextMonth", "Kế hoạch đã nhập", "supportRequest", "", "status", "SUBMITTED")));
+        assertThat(ownSubmission.errors()).isEmpty();
+        assertThat(ownSubmission.updatedRows()).isEqualTo(1);
+
+        var locked = service.importWorkbook("reports", workbook("reports", values(
+                "unitCode", "VCS", "month", "2034-01", "preparedBy", "USER VCS",
+                "planNextMonth", "Ghi đè", "supportRequest", "", "status", "DRAFT")));
+        assertThat(locked.errors()).anyMatch(error -> error.contains("đã nộp cho ADMIN"));
+
+        var approved = service.importWorkbook("reports", workbook("reports", values(
+                "unitCode", "VCS", "month", "2034-02", "preparedBy", "USER VCS",
+                "planNextMonth", "Không hợp lệ", "supportRequest", "", "status", "APPROVED")));
+        assertThat(approved.errors()).anyMatch(error -> error.contains("không được nhập báo cáo ở trạng thái"));
+
+        var crossUnit = service.importWorkbook("reports", workbook("reports", values(
+                "unitCode", "GPL", "month", "2034-02", "preparedBy", "USER VCS",
+                "planNextMonth", "Sai phạm vi", "supportRequest", "", "status", "DRAFT")));
+        assertThat(crossUnit.errors()).anyMatch(error -> error.contains("chỉ được truy cập dữ liệu thuộc CĐCS"));
     }
 
     @Test

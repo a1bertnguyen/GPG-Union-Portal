@@ -53,17 +53,44 @@ export function WelfareDashboard({ records, month }: { records: BaseRecord[]; mo
 }
 
 export function CasesDashboard({ records, month }: { records: BaseRecord[]; month: string }) {
+  const today = new Date().toISOString().slice(0, 10)
+  const tomorrowDate = new Date(); tomorrowDate.setDate(tomorrowDate.getDate() + 1)
+  const tomorrow = tomorrowDate.toISOString().slice(0, 10)
   const monthly = records.filter(item => String(item.receivedDate ?? '').startsWith(month))
-  const open = monthly.filter(item => item.status !== 'CLOSED')
-  const overdue = open.filter(item => String(item.deadline ?? '') < new Date().toISOString().slice(0, 10))
+  const monthlyOpen = monthly.filter(item => item.status !== 'CLOSED')
+  const open = records.filter(item => item.status !== 'CLOSED')
+  const due24 = open.filter(item => String(item.deadline ?? '') >= today && String(item.deadline ?? '') <= tomorrow)
+  const overdue = open.filter(item => String(item.deadline ?? '') < today)
   const high = open.filter(item => ['HIGH', 'CRITICAL'].includes(String(item.severity ?? '')))
+  const manyAffected = open.filter(item => Number(item.affectedPeople ?? 0) >= 10)
+  const urgentEscalation = open.filter(item => Number(item.affectedPeople ?? 0) >= 10
+    || ['HIGH', 'CRITICAL'].includes(String(item.severity ?? '')))
+  const groupCounts = new Map<string, number>()
+  open.forEach(item => groupCounts.set(String(item.issueGroup ?? ''), (groupCounts.get(String(item.issueGroup ?? '')) ?? 0) + 1))
+  const repeated = open.filter(item => (groupCounts.get(String(item.issueGroup ?? '')) ?? 0) > 1)
   const responded = monthly.filter(item => Boolean(item.resultText)).length
   const responseRate = monthly.length ? Math.round(responded * 100 / monthly.length) : 100
   const priorities = [...open].sort((left, right) => String(left.deadline ?? '').localeCompare(String(right.deadline ?? ''))).slice(0, 10)
+  const publicStatus = (status: unknown) => {
+    const value = String(status ?? '')
+    if (['CLASSIFYING', 'ASSIGNED', 'IN_PROGRESS'].includes(value)) return 'IN_PROGRESS'
+    if (['WAITING_RESPONSE', 'PENDING_APPROVAL'].includes(value)) return 'WAITING_RESPONSE'
+    return value
+  }
   return <div id="dashboard-cases">
+    {urgentEscalation.length > 0 && <div className="alert alert--danger case-escalation-alert">
+      <strong>Báo ngay CĐ GPG / Ban CSNLĐ</strong>
+      <span>{urgentEscalation.length} vụ việc đang mở ảnh hưởng nhiều NLĐ hoặc có rủi ro cao. Không chờ báo cáo tháng.</span>
+    </div>}
+    <div className="today-alert-grid today-alert-grid--static">
+      <article><span>Đến hạn 24h</span><strong>{due24.length}</strong><small>Cần ưu tiên phản hồi</small></article>
+      <article className="today-alert--danger"><span>Quá hạn</span><strong>{overdue.length}</strong><small>Cần lý do và ETA mới</small></article>
+      <article><span>Vụ việc lặp lại</span><strong>{repeated.length}</strong><small>Theo nhóm vấn đề</small></article>
+      <article className="today-alert--orange"><span>Ảnh hưởng nhiều NLĐ</span><strong>{manyAffected.length}</strong><small>Từ 10 người trở lên</small></article>
+    </div>
     <MetricGrid cards={[
       ['Vụ việc trong kỳ', monthly.length, `Tiếp nhận trong ${month}`, 'blue'],
-      ['Đang mở', open.length, 'Chưa ở trạng thái đóng', 'teal'],
+      ['Đang mở trong kỳ', monthlyOpen.length, 'Chưa ở trạng thái đóng', 'teal'],
       ['Quá hạn', overdue.length, 'Cần cập nhật nguyên nhân và ETA', 'orange'],
       ['Có kết quả phản hồi', `${responseRate}%`, `${responded} hồ sơ có kết quả`, 'green'],
     ]} />
@@ -71,6 +98,6 @@ export function CasesDashboard({ records, month }: { records: BaseRecord[]; mont
       <article className="panel"><PanelHeading eyebrow="Phân loại rủi ro" title="Mức độ vụ việc" /><BreakdownList rows={grouped(monthly, 'severity')} /></article>
       <article className="panel"><PanelHeading eyebrow="SLA & trách nhiệm" title="Tình trạng xử lý" /><KpiLine label="Có kết quả phản hồi" value={responseRate} tone="green" /><KpiLine label="Vụ việc trong hạn" value={open.length ? 100 - Math.round(overdue.length * 100 / open.length) : 100} tone="blue" /><KpiLine label="Không thuộc mức cao/nghiêm trọng" value={open.length ? 100 - Math.round(high.length * 100 / open.length) : 100} tone="teal" /></article>
     </div>
-    <DashboardTable id="case-priorities" title="Vụ việc cần ưu tiên" columns={['Mã', 'Nhóm vấn đề', 'Mức độ', 'PIC', 'Deadline', 'Trạng thái']} rows={priorities.map(item => [String(item.caseCode ?? '—'), String(item.issueGroup ?? '—'), enumLabel(item.severity), String(item.ownerName ?? '—'), formatDate(item.deadline), enumLabel(item.status)])} />
+    <DashboardTable id="case-priorities" title="Vụ việc cần ưu tiên" columns={['Mã', 'Nhóm vấn đề', 'Mức độ', 'PIC', 'Deadline', 'Trạng thái']} rows={priorities.map(item => [String(item.caseCode ?? '—'), String(item.issueGroup ?? '—'), enumLabel(item.severity), String(item.ownerName ?? '—'), formatDate(item.deadline), enumLabel(publicStatus(item.status))])} />
   </div>
 }

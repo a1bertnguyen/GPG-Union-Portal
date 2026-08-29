@@ -9,6 +9,7 @@ import vn.gpg.unionportal.model.IntegrationRun;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -123,7 +124,20 @@ public final class ApiModels {
             @NotNull DocumentStatus documentStatus,
             @NotNull DocumentStatus receiptStatus,
             @NotNull Boolean hasImage,
-            @Size(max = 1000) String notes) {
+            @Size(max = 1000) String notes,
+            Long policyId) {
+    }
+
+    public record WelfarePolicyRequest(
+            @NotBlank @Size(max = 40) String code,
+            @NotNull WelfarePolicySource source,
+            @NotNull @Min(1) Integer sequenceNumber,
+            @NotNull WelfareType welfareType,
+            @NotBlank @Size(max = 180) String name,
+            @NotNull @DecimalMin("0.00") BigDecimal supportAmount,
+            @Size(max = 1000) String eligibilityNotes,
+            @NotNull @Min(1) @Max(8) Integer processingWeeks,
+            @NotNull Boolean active) {
     }
 
     public record LaborCaseRequest(
@@ -131,17 +145,29 @@ public final class ApiModels {
             @NotNull LocalDate receivedDate,
             @NotNull Long unionUnitId,
             @NotBlank @Size(max = 150) String requesterName,
+            @Size(max = 40) String employeeCode,
+            @Size(max = 150) String jobTitle,
+            @Size(max = 200) String workplace,
+            LocalDate startWorkDate,
+            LocalDate leaveDate,
+            @Size(max = 30) String phone,
             @Size(max = 120) String source,
             @NotBlank @Size(max = 120) String issueGroup,
             @NotNull CaseSeverity severity,
-            @NotBlank @Size(max = 150) String ownerName,
-            @NotNull LocalDate deadline,
+            @Size(max = 150) String ownerName,
+            LocalDate deadline,
             @NotNull CaseStatus status,
             @NotBlank @Size(max = 2000) String description,
             @NotNull @Min(1) Integer affectedPeople,
             @Size(max = 500) String attachmentNote,
             @Size(max = 2000) String resultText,
+            LocalDate responseDate,
             @Size(max = 1000) String overdueReason) {
+    }
+
+    public record CaseApprovalRequest(
+            @NotBlank @Size(max = 150) String ownerName,
+            @NotNull LocalDate deadline) {
     }
 
     public record ActivityRequest(
@@ -149,20 +175,34 @@ public final class ApiModels {
             @NotBlank @Size(max = 200) String name,
             @NotNull Long unionUnitId,
             @NotNull LocalDate eventDate,
+            LocalTime eventTime,
+            @Size(max = 300) String location,
+            @Size(max = 150) String programPic,
             @NotNull ActivityStatus status,
             @Size(max = 1000) String objective,
             @NotNull @DecimalMin("0.00") BigDecimal plannedBudget,
             @NotNull @DecimalMin("0.00") BigDecimal actualCost,
+            @NotNull @Min(0) Integer invitedCount,
             @NotNull @Min(0) Integer participantCount,
             @Size(max = 2000) String participantList,
+            @Size(max = 500) String employeeGroup,
             @NotNull @Min(0) Integer checkInCount,
+            @Size(max = 3000) String actualContent,
+            @Size(max = 2000) String planDifference,
+            @NotNull @Min(0) Integer workersReached,
             @DecimalMin("0.00") @DecimalMax("5.00") BigDecimal usefulnessScore,
             @Size(max = 2000) String quickFeedback,
             @Size(max = 2000) String issues,
+            @Size(max = 2000) String outputProposal,
+            @Size(max = 2000) String communicationContent,
+            @Size(max = 2000) String strengths,
+            @Size(max = 2000) String weaknesses,
             @NotNull Boolean reportCompleted,
             @NotNull DocumentStatus documentStatus,
+            @Size(max = 2000) String followUpIssue,
             @Size(max = 150) String followUpOwner,
             LocalDate followUpDeadline,
+            @Size(max = 60) String followUpStatus,
             @Size(max = 2000) String lessonsLearned) {
     }
 
@@ -223,7 +263,8 @@ public final class ApiModels {
             List<AlertItem> alerts) {
     }
 
-    public record FinanceSummary(BigDecimal income, BigDecimal expense, BigDecimal balance, long incompleteDocuments) {
+    public record FinanceSummary(BigDecimal income, BigDecimal expense, BigDecimal advance,
+                                 BigDecimal balance, long incompleteDocuments) {
     }
 
     public record MemberChangeRequest(
@@ -253,6 +294,42 @@ public final class ApiModels {
             String memberName,
             UnionUnit unionUnit,
             MemberDocumentType documentType,
+            String fileName,
+            String contentType,
+            Long fileSize,
+            String uploadedBy,
+            Instant createdAt) {
+    }
+
+    public record FinanceDocumentView(
+            Long id,
+            Long financeEntryId,
+            String entryCode,
+            String fileName,
+            String contentType,
+            long fileSize,
+            String uploadedBy,
+            Instant createdAt) {
+    }
+
+    public record WelfareDocumentView(
+            Long id,
+            Long welfareRecordId,
+            String recordCode,
+            WelfareDocumentType documentType,
+            String fileName,
+            String contentType,
+            Long fileSize,
+            String uploadedBy,
+            Instant createdAt) {
+    }
+
+    public record DocumentLibraryView(
+            Long id,
+            UnionUnit unionUnit,
+            String category,
+            String title,
+            String description,
             String fileName,
             String contentType,
             Long fileSize,
@@ -333,12 +410,34 @@ public final class ApiModels {
             List<AlertItem> alerts) {
     }
 
+    public record KpiCriterionView(
+            String code,
+            String label,
+            String target,
+            double actual,
+            String actualLabel,
+            boolean met,
+            String note) {
+    }
+
+    public record UnitKpiView(
+            Long unionUnitId,
+            String unionUnitCode,
+            String unionUnitName,
+            String month,
+            int score,
+            String rating,
+            long passedCriteria,
+            List<KpiCriterionView> criteria) {
+    }
+
     public record MonthlySummary(
             String month,
             Long unionUnitId,
             String unionUnitName,
             long activeEmployees,
             long unionMembers,
+            long memberChanges,
             long welfareCases,
             long completedWelfareCases,
             long laborCases,
@@ -347,6 +446,7 @@ public final class ApiModels {
             int participants,
             BigDecimal income,
             BigDecimal expense,
+            BigDecimal advance,
             BigDecimal netChange,
             long incompleteDocuments,
             MonthlyReport narrative) {

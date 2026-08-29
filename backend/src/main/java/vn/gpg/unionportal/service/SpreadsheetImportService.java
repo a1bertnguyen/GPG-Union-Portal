@@ -23,9 +23,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.text.Normalizer;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
 
@@ -36,6 +38,12 @@ public class SpreadsheetImportService {
     private static final int MAX_REPORTED_ERRORS = 100;
     private static final String DATA_SHEET = "Dữ liệu";
     private static final String GUIDE_SHEET = "Hướng dẫn";
+    private static final List<DateTimeFormatter> DATE_FORMATS = List.of(
+            DateTimeFormatter.ISO_LOCAL_DATE,
+            DateTimeFormatter.ofPattern("d/M/uuuu"),
+            DateTimeFormatter.ofPattern("d/M/uu"),
+            DateTimeFormatter.ofPattern("d-M-uuuu"),
+            DateTimeFormatter.ofPattern("d-M-uu"));
 
     private final UnionUnitRepository unitRepository;
     private final MemberRepository memberRepository;
@@ -105,6 +113,49 @@ public class SpreadsheetImportService {
         }
     }
 
+    public byte[] exportReports(String monthValue, Long requestedUnitId) {
+        Resource resource = Resource.REPORTS;
+        requireResourceAccess(resource);
+        YearMonth month = YearMonth.parse(monthValue);
+        Long scopedUnitId = currentUser.scopedUnitId(requestedUnitId);
+        var reports = reportRepository.findAll().stream()
+                .filter(report -> YearMonth.from(report.getReportMonth()).equals(month))
+                .filter(report -> scopedUnitId == null || report.getUnionUnit().getId().equals(scopedUnitId))
+                .sorted(Comparator.comparing(report -> report.getUnionUnit().getCode()))
+                .toList();
+
+        try (var workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
+            var styles = createStyles(workbook);
+            createDataSheet(workbook, resource, styles);
+            createGuideSheet(workbook, resource, styles);
+            Sheet sheet = workbook.getSheet(DATA_SHEET);
+            for (int rowIndex = 0; rowIndex < reports.size(); rowIndex++) {
+                MonthlyReport report = reports.get(rowIndex);
+                Row row = sheet.createRow(rowIndex + 1);
+                for (int columnIndex = 0; columnIndex < resource.columns.size(); columnIndex++) {
+                    String value = switch (resource.columns.get(columnIndex).name()) {
+                        case "unitCode" -> report.getUnionUnit().getCode();
+                        case "month" -> YearMonth.from(report.getReportMonth()).toString();
+                        case "preparedBy" -> report.getPreparedBy();
+                        case "planNextMonth" -> report.getPlanNextMonth();
+                        case "supportRequest" -> report.getSupportRequest();
+                        case "status" -> report.getStatus().name();
+                        default -> "";
+                    };
+                    Cell cell = row.createCell(columnIndex, CellType.STRING);
+                    cell.setCellValue(value == null ? "" : value);
+                    cell.setCellStyle(styles.body);
+                }
+            }
+            sheet.setAutoFilter(new CellRangeAddress(0, Math.max(reports.size(), 1), 0, resource.columns.size() - 1));
+            workbook.setActiveSheet(0);
+            workbook.write(output);
+            return output.toByteArray();
+        } catch (IOException exception) {
+            throw new IllegalStateException("Không thể xuất báo cáo tháng", exception);
+        }
+    }
+
     public SpreadsheetImportResult importWorkbook(String resourceName, MultipartFile file) {
         Resource resource = requireResource(resourceName);
         requireResourceAccess(resource);
@@ -125,7 +176,7 @@ public class SpreadsheetImportService {
                     errors.add("Tệp Excel không có sheet dữ liệu.");
                 } else {
                     Map<String, Integer> headers = readHeaders(sheet.getRow(0), resource);
-                    var missing = resource.columns.stream()
+                    var missing = isBook1CaseLayout(resource, headers) ? List.<String>of() : resource.columns.stream()
                             .filter(Column::required)
                             .map(Column::name)
                             .filter(name -> !headers.containsKey(name.toLowerCase(Locale.ROOT)))
@@ -241,38 +292,97 @@ public class SpreadsheetImportService {
                 row.enumValue("status", WorkStatus.class, true), row.decimal("amount", true),
                 row.decimal("standardAmount", false), row.enumValue("documentStatus", DocumentStatus.class, true),
                 Optional.ofNullable(row.enumValue("receiptStatus", DocumentStatus.class, false)).orElse(DocumentStatus.INCOMPLETE),
-                Optional.ofNullable(row.bool("hasImage", false)).orElse(false), row.optional("notes")));
+                Optional.ofNullable(row.bool("hasImage", false)).orElse(false), row.optional("notes"), null));
         welfareRepository.save(mapper.apply(existing.orElseGet(WelfareRecord::new), request));
         return existing.isEmpty();
     }
 
     private boolean importCase(RowValues row) {
-        String code = row.required("caseCode");
+        LocalDate receivedDate = row.date("receivedDate", true);
+        String employeeCode = row.optional("employeeCode");
+        String code = Optional.ofNullable(row.optional("caseCode"))
+                .orElseGet(() -> book1CaseCode(employeeCode, receivedDate, row.rowNumber()));
         var existing = caseRepository.findByCaseCodeIgnoreCase(code);
-        UnionUnit unit = scopedUnit(row.required("unitCode"), existing.map(LaborCase::getUnionUnit).orElse(null));
+        UnionUnit unit = caseUnit(row, existing.map(LaborCase::getUnionUnit).orElse(null));
+        if (!currentUser.isAdmin() && existing
+                .map(LaborCase::getStatus)
+                .filter(status -> status == CaseStatus.PENDING_APPROVAL || status == CaseStatus.CLOSED)
+                .isPresent()) {
+            throw new AccessDeniedException("USER không thể nhập đè vụ việc đang chờ duyệt hoặc đã đóng");
+        }
+        CaseStatus importedStatus = row.enumValue("status", CaseStatus.class, false);
+        CaseStatus status = currentUser.isAdmin()
+                ? Optional.ofNullable(importedStatus).orElseGet(() -> existing.map(LaborCase::getStatus).orElse(CaseStatus.NEW))
+                : existing.map(LaborCase::getStatus).orElse(CaseStatus.NEW);
+        String importedOwner = row.optional("ownerName");
+        LocalDate importedDeadline = row.date("deadline", false);
+        String ownerName = currentUser.isAdmin()
+                ? Optional.ofNullable(importedOwner).orElseGet(() -> existing.map(LaborCase::getOwnerName).orElse(null))
+                : existing.map(LaborCase::getOwnerName).orElse(null);
+        LocalDate deadline = currentUser.isAdmin()
+                ? Optional.ofNullable(importedDeadline).orElseGet(() -> existing.map(LaborCase::getDeadline).orElse(null))
+                : existing.map(LaborCase::getDeadline).orElse(null);
         var request = validate(new LaborCaseRequest(
-                code, row.date("receivedDate", true), unit.getId(),
-                Optional.ofNullable(row.optional("requesterName")).orElse("Chưa cập nhật"), row.optional("source"), row.required("issueGroup"),
-                row.enumValue("severity", CaseSeverity.class, true), row.required("ownerName"),
-                row.date("deadline", true), row.enumValue("status", CaseStatus.class, true),
-                row.required("description"), row.integer("affectedPeople", true), row.optional("attachmentNote"), row.optional("resultText"),
+                code, receivedDate, unit.getId(),
+                Optional.ofNullable(row.optional("requesterName")).orElse("Chưa cập nhật"),
+                employeeCode, row.optional("jobTitle"), row.optional("workplace"),
+                row.date("startWorkDate", false), row.date("leaveDate", false), row.optional("phone"),
+                Optional.ofNullable(row.optional("source")).orElse("Excel xử lý vụ việc"),
+                Optional.ofNullable(row.optional("issueGroup")).orElse("Yêu cầu người lao động"),
+                Optional.ofNullable(row.enumValue("severity", CaseSeverity.class, false)).orElse(CaseSeverity.MEDIUM),
+                ownerName, deadline, status,
+                row.required("description"), Optional.ofNullable(row.integer("affectedPeople", false)).orElse(1),
+                row.optional("attachmentNote"), row.optional("resultText"), row.date("responseDate", false),
                 row.optional("overdueReason")));
         caseRepository.save(mapper.apply(existing.orElseGet(LaborCase::new), request));
         return existing.isEmpty();
+    }
+
+    private UnionUnit caseUnit(RowValues row, UnionUnit existingUnit) {
+        if (existingUnit != null) {
+            currentUser.requireUnitAccess(existingUnit.getId());
+            String requestedCode = row.optional("unitCode");
+            return requestedCode == null ? existingUnit : scopedUnit(requestedCode, existingUnit);
+        }
+        String unitCode = row.optional("unitCode");
+        if (unitCode != null) return scopedUnit(unitCode, null);
+        Long scopedUnitId = currentUser.scopedUnitId(null);
+        if (scopedUnitId == null) {
+            throw new IllegalArgumentException("ADMIN cần thêm cột Mã CĐCS khi nhập file xử lý vụ việc");
+        }
+        return unitRepository.findById(scopedUnitId)
+                .orElseThrow(() -> new IllegalArgumentException("không tìm thấy CĐCS được gán cho USER"));
+    }
+
+    private String book1CaseCode(String employeeCode, LocalDate receivedDate, int rowNumber) {
+        String employeePart = Optional.ofNullable(employeeCode)
+                .map(value -> value.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]", ""))
+                .filter(value -> !value.isBlank())
+                .orElse("UNKNOWN");
+        String code = "VV-" + employeePart + "-" + receivedDate.format(DateTimeFormatter.BASIC_ISO_DATE) + "-R" + rowNumber;
+        return abbreviate(code, 40);
     }
 
     private boolean importActivity(RowValues row) {
         String code = row.required("activityCode");
         var existing = activityRepository.findByActivityCodeIgnoreCase(code);
         UnionUnit unit = scopedUnit(row.required("unitCode"), existing.map(UnionActivity::getUnionUnit).orElse(null));
+        ActivityStatus status = row.enumValue("status", ActivityStatus.class, true);
+        boolean reportCompleted = row.bool("reportCompleted", true);
+        if (reportCompleted || status == ActivityStatus.COMPLETED) {
+            throw new IllegalArgumentException("Excel chỉ dùng nhập kế hoạch; hãy nộp và đóng báo cáo tại mục Báo cáo chương trình");
+        }
         var request = validate(new ActivityRequest(
                 code, row.required("name"), unit.getId(), row.date("eventDate", true),
-                row.enumValue("status", ActivityStatus.class, true), row.optional("objective"),
+                null, null, null, status, row.optional("objective"),
                 row.decimal("plannedBudget", true), row.decimal("actualCost", true),
-                row.integer("participantCount", true), row.optional("participantList"), Optional.ofNullable(row.integer("checkInCount", false)).orElse(0),
-                row.decimal("usefulnessScore", false), row.optional("quickFeedback"), row.optional("issues"),
-                row.bool("reportCompleted", true), Optional.ofNullable(row.enumValue("documentStatus", DocumentStatus.class, false)).orElse(DocumentStatus.INCOMPLETE),
-                row.optional("followUpOwner"), row.date("followUpDeadline", false), row.optional("lessonsLearned")));
+                0, row.integer("participantCount", true), row.optional("participantList"), null,
+                Optional.ofNullable(row.integer("checkInCount", false)).orElse(0), null, null, 0,
+                row.decimal("usefulnessScore", false), row.optional("quickFeedback"), row.optional("issues"), null,
+                null, null, null,
+                false, Optional.ofNullable(row.enumValue("documentStatus", DocumentStatus.class, false)).orElse(DocumentStatus.INCOMPLETE),
+                null, row.optional("followUpOwner"), row.date("followUpDeadline", false), null,
+                row.optional("lessonsLearned")));
         activityRepository.save(mapper.apply(existing.orElseGet(UnionActivity::new), request));
         return existing.isEmpty();
     }
@@ -335,6 +445,14 @@ public class SpreadsheetImportService {
         var request = validate(new MonthlyReportRequest(
                 unit.getId(), month.toString(), row.required("preparedBy"), row.optional("planNextMonth"),
                 row.optional("supportRequest"), row.enumValue("status", ReportStatus.class, true)));
+        if (!currentUser.isAdmin()) {
+            if (request.status() == ReportStatus.APPROVED) {
+                throw new AccessDeniedException("USER không được nhập báo cáo ở trạng thái ADMIN đã duyệt");
+            }
+            if (existing.isPresent() && existing.get().getStatus() != ReportStatus.DRAFT) {
+                throw new AccessDeniedException("Báo cáo đã nộp cho ADMIN không thể nhập lại từ Excel");
+            }
+        }
         reportRepository.save(mapper.apply(existing.orElseGet(MonthlyReport::new), request));
         return existing.isEmpty();
     }
@@ -418,7 +536,8 @@ public class SpreadsheetImportService {
             String value = cellText(cell);
             if (value == null) continue;
             String normalized = value.toLowerCase(Locale.ROOT);
-            String key = resource.columns.stream()
+            String key = resource == Resource.CASES ? caseHeaderAlias(value) : null;
+            if (key == null) key = resource.columns.stream()
                     .filter(column -> column.name.equalsIgnoreCase(value) || column.header().equalsIgnoreCase(value))
                     .map(column -> column.name.toLowerCase(Locale.ROOT))
                     .findFirst()
@@ -428,6 +547,34 @@ public class SpreadsheetImportService {
             }
         }
         return headers;
+    }
+
+    private boolean isBook1CaseLayout(Resource resource, Map<String, Integer> headers) {
+        return resource == Resource.CASES
+                && headers.containsKey("requestername")
+                && headers.containsKey("receiveddate")
+                && headers.containsKey("description");
+    }
+
+    private String caseHeaderAlias(String header) {
+        String normalized = Normalizer.normalize(header, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .trim()
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("\\s+", " ");
+        return switch (normalized) {
+            case "manv", "ma nv", "ma nhan vien" -> "employeecode";
+            case "ho va ten", "ho ten" -> "requestername";
+            case "chuc danh" -> "jobtitle";
+            case "noi lam viec" -> "workplace";
+            case "ngay vao lam" -> "startworkdate";
+            case "ngay nghi" -> "leavedate";
+            case "dien thoai" -> "phone";
+            case "yeu cau" -> "description";
+            case "ngay yeu cau" -> "receiveddate";
+            case "ngay tra loi" -> "responsedate";
+            default -> null;
+        };
     }
 
     private boolean isBlankRow(Row row, Collection<Integer> columns) {
@@ -622,10 +769,13 @@ public class SpreadsheetImportService {
         CASES("cases", "vụ việc", "mau-vu-viec.xlsx", IntegrationType.CASES_IMPORT, false, List.of(
                 c("caseCode", "Mã vụ việc, khóa cập nhật", true, 20), d("receivedDate", "Ngày tiếp nhận", true),
                 c("unitCode", "Mã CĐCS", true, 18), c("requesterName", "Người gửi", false, 26), c("source", "Kênh tiếp nhận", false, 22), c("issueGroup", "Nhóm vấn đề", true, 24),
-                e("severity", "Mức độ", true, "LOW", "MEDIUM", "HIGH", "CRITICAL"), c("ownerName", "Người phụ trách", true, 24),
-                d("deadline", "Hạn xử lý", true), e("status", "Trạng thái", true, "NEW", "VERIFYING", "CLASSIFYING", "ASSIGNED", "IN_PROGRESS", "WAITING_RESPONSE", "CLOSED"),
+                e("severity", "Mức độ", true, "LOW", "MEDIUM", "HIGH", "CRITICAL"), c("ownerName", "PIC do ADMIN giao", false, 24),
+                d("deadline", "Deadline do ADMIN giao", false), e("status", "Trạng thái", false, "NEW", "VERIFYING", "CLASSIFYING", "ASSIGNED", "IN_PROGRESS", "WAITING_RESPONSE", "PENDING_APPROVAL", "CLOSED"),
                 c("description", "Mô tả", true, 44), n("affectedPeople", "Số NLĐ ảnh hưởng", true),
-                c("attachmentNote", "Tài liệu đính kèm / liên kết", false, 38), c("resultText", "Kết quả / phản hồi", false, 44), c("overdueReason", "Lý do quá hạn / ETA mới", false, 38))),
+                c("attachmentNote", "Tài liệu đính kèm / liên kết", false, 38), c("resultText", "Kết quả / phản hồi", false, 44), c("overdueReason", "Lý do quá hạn / ETA mới", false, 38),
+                c("employeeCode", "MãNV", false, 18), c("jobTitle", "Chức danh", false, 24), c("workplace", "Noi làm việc", false, 30),
+                d("startWorkDate", "Ngày vào làm", false), d("leaveDate", "Ngày nghỉ", false), c("phone", "Điện thoại", false, 18),
+                d("responseDate", "Ngày trả lời", false))),
         ACTIVITIES("activities", "hoạt động", "mau-hoat-dong.xlsx", IntegrationType.ACTIVITIES_IMPORT, false, List.of(
                 c("activityCode", "Mã hoạt động, khóa cập nhật", true, 20), c("name", "Tên chương trình", true, 32),
                 c("unitCode", "Mã CĐCS", true, 18), d("eventDate", "Ngày tổ chức", true),
@@ -638,8 +788,8 @@ public class SpreadsheetImportService {
                 c("followUpOwner", "Người follow-up", false, 24), d("followUpDeadline", "Hạn follow-up", false), c("lessonsLearned", "Bài học", false, 42))),
         FINANCE("finance", "tài chính nội bộ", "mau-tai-chinh-noi-bo.xlsx", IntegrationType.FINANCE_EXCEL_IMPORT, false, List.of(
                 c("entryCode", "Mã phiếu, khóa cập nhật", true, 20), c("unitCode", "Mã CĐCS", true, 18),
-                d("transactionDate", "Ngày giao dịch nội bộ", true), e("entryType", "Loại phiếu", true, "INCOME", "EXPENSE"),
-                c("category", "Nhóm thu/chi", true, 24), n("amount", "Số tiền", true),
+                d("transactionDate", "Ngày giao dịch nội bộ", true), e("entryType", "Loại phiếu", true, "INCOME", "EXPENSE", "ADVANCE"),
+                c("category", "Nhóm nghiệp vụ", true, 24), n("amount", "Số tiền", true),
                 c("description", "Nội dung", true, 42), c("documentNumber", "Số chứng từ", false, 20),
                 e("documentStatus", "Tình trạng chứng từ", true, "COMPLETE", "INCOMPLETE", "NOT_REQUIRED"))),
         SURVEYS("surveys", "khảo sát", "mau-khao-sat.xlsx", IntegrationType.SURVEYS_IMPORT, false, List.of(
@@ -656,7 +806,7 @@ public class SpreadsheetImportService {
                 c("unitCode", "Mã CĐCS, cùng tháng là khóa cập nhật", true, 18), m("month", "Kỳ báo cáo", true),
                 c("preparedBy", "Người lập", true, 26), c("planNextMonth", "Kế hoạch tháng tới", false, 46),
                 c("supportRequest", "Đề xuất / yêu cầu hỗ trợ", false, 46),
-                e("status", "Trạng thái", true, "DRAFT", "SUBMITTED", "APPROVED"))),
+                e("status", "Trạng thái; USER chỉ dùng DRAFT hoặc SUBMITTED", true, "DRAFT", "SUBMITTED", "APPROVED"))),
         USERS("users", "tài khoản", "mau-tai-khoan.xlsx", IntegrationType.USERS_IMPORT, true, List.of(
                 c("username", "Tên đăng nhập, khóa cập nhật", true, 24), c("fullName", "Họ tên", true, 28),
                 e("role", "Vai trò", true, "ADMIN", "USER"), c("unitCode", "Mã CĐCS; bắt buộc với USER", false, 18),
@@ -730,14 +880,22 @@ public class SpreadsheetImportService {
                 return null;
             }
             if (cell.getCellType() == CellType.FORMULA) throw new IllegalArgumentException(name + " không hỗ trợ công thức");
-            if (cell.getCellType() == CellType.NUMERIC && DateUtil.isCellDateFormatted(cell)) {
+            if (cell.getCellType() == CellType.NUMERIC && DateUtil.isValidExcelDate(cell.getNumericCellValue())) {
                 return cell.getLocalDateTimeCellValue().toLocalDate();
             }
-            try {
-                return LocalDate.parse(required(name));
-            } catch (DateTimeParseException exception) {
-                throw new IllegalArgumentException(name + " phải theo định dạng yyyy-MM-dd");
+            String value = required(name);
+            for (DateTimeFormatter formatter : DATE_FORMATS) {
+                try {
+                    return LocalDate.parse(value, formatter);
+                } catch (DateTimeParseException ignored) {
+                    // Try the next supported format.
+                }
             }
+            throw new IllegalArgumentException(name + " phải theo định dạng yyyy-MM-dd hoặc d/M/yyyy");
+        }
+
+        int rowNumber() {
+            return row.getRowNum() + 1;
         }
 
         YearMonth month(String name) {

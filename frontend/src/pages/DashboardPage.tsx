@@ -1,25 +1,19 @@
 import { useEffect, useState } from 'react'
 import { currentMonth } from '../api'
 import { apiAllCached, apiCached } from '../apiCache'
-import type { BaseRecord, DashboardSummary, EngagementSummary, UnionUnit } from '../types'
+import type { BaseRecord, DashboardSummary, UnionUnit } from '../types'
 import { CasesDashboard, ExecutiveDashboard, WelfareDashboard } from './dashboard/OperationalDashboardViews'
-import { ActivitiesDashboard, FinanceDashboard, VoiceDashboard } from './dashboard/ProgramDashboardViews'
+import { ActivitiesDashboard, FinanceDashboard } from './dashboard/ProgramDashboardViews'
 
-export type DashboardKind = 'executive' | 'welfare' | 'cases' | 'activities' | 'finance' | 'voice'
+export type DashboardKind = 'executive' | 'welfare' | 'cases' | 'activities' | 'finance'
 
 type Props = { kind: DashboardKind }
-type DashboardLoadResult = { summary?: DashboardSummary; engagement?: EngagementSummary; records?: BaseRecord[]; units?: UnionUnit[] }
+type DashboardLoadResult = { summary?: DashboardSummary; records?: BaseRecord[]; units?: UnionUnit[] }
 
 const emptySummary: DashboardSummary = {
   unitCount: 0, activeMemberCount: 0, unionMemberCount: 0, welfareCompletionRate: 0,
   openCaseCount: 0, overdueCaseCount: 0, monthIncome: 0, monthExpense: 0,
-  allTimeBalance: 0, pendingReportCount: 0, alerts: [],
-}
-
-const emptyEngagement: EngagementSummary = {
-  month: '', activeSurveyCount: 0, totalSurveyCount: 0, totalResponses: 0,
-  surveyResponseRate: 0, averageRating: 0, caseResponseRate: 0, averageActivityScore: 0,
-  topNeeds: [], alerts: [],
+  pendingReportCount: 0, alerts: [],
 }
 
 const dashboardMeta: Record<DashboardKind, { eyebrow: string; title: string; description: string }> = {
@@ -27,14 +21,12 @@ const dashboardMeta: Record<DashboardKind, { eyebrow: string; title: string; des
   welfare: { eyebrow: 'Dashboard chăm lo', title: 'Chăm lo & chính sách', description: 'Tiến độ thực hiện, cơ cấu đối tượng và hồ sơ cần hoàn thiện.' },
   cases: { eyebrow: 'Dashboard vụ việc', title: 'Kiến nghị & quan hệ lao động', description: 'Theo dõi SLA, mức độ nghiêm trọng, PIC và kết quả xử lý.' },
   activities: { eyebrow: 'Dashboard hoạt động', title: 'Chương trình công đoàn', description: 'Kế hoạch, mức tham gia, ngân sách và báo cáo sau chương trình.' },
-  finance: { eyebrow: 'Dashboard tài chính', title: 'Thu – chi nội bộ', description: 'Tổng hợp dữ liệu do người dùng nhập; không kết nối ngân hàng hoặc dịch vụ thanh toán.' },
-  voice: { eyebrow: 'Dashboard Employee Voice', title: 'Tiếng nói người lao động', description: 'Mức độ kết nối, tỷ lệ phản hồi và nhu cầu nổi bật trong kỳ.' },
+  finance: { eyebrow: 'Dashboard tài chính', title: 'Thu • Chi • Tạm ứng', description: 'Tổng hợp phiếu và tình trạng chứng từ; không kết nối ngân hàng hoặc dịch vụ thanh toán.' },
 }
 
 export default function DashboardPage({ kind }: Props) {
   const [month, setMonth] = useState(currentMonth())
   const [summary, setSummary] = useState(emptySummary)
-  const [engagement, setEngagement] = useState(emptyEngagement)
   const [records, setRecords] = useState<BaseRecord[]>([])
   const [units, setUnits] = useState<UnionUnit[]>([])
   const [loading, setLoading] = useState(true)
@@ -47,12 +39,10 @@ export default function DashboardPage({ kind }: Props) {
     // request per account/query, so remounting a tab or React StrictMode does not duplicate it.
     const request: Promise<DashboardLoadResult> = kind === 'executive'
       ? apiCached<DashboardSummary>(`/dashboard?month=${month}`, options).then(data => ({ summary: data }))
-      : kind === 'voice'
-        ? apiCached<EngagementSummary>(`/engagement?month=${month}`, options).then(data => ({ engagement: data }))
-        : kind === 'welfare'
+      : kind === 'welfare'
           ? apiAllCached<BaseRecord>('/welfare', { month }, options).then(data => ({ records: data }))
           : kind === 'cases'
-            ? apiAllCached<BaseRecord>('/cases', { month }, options).then(data => ({ records: data }))
+            ? apiAllCached<BaseRecord>('/cases', {}, options).then(data => ({ records: data }))
             : kind === 'activities'
               ? apiAllCached<BaseRecord>('/activities', { month }, options).then(data => ({ records: data }))
               : Promise.all([
@@ -64,7 +54,6 @@ export default function DashboardPage({ kind }: Props) {
     request.then(result => {
       if (controller.signal.aborted) return
       if (result.summary) setSummary(result.summary)
-      if (result.engagement) setEngagement(result.engagement)
       if (result.records) setRecords(result.records)
       if (result.units) setUnits(result.units)
       setError('')
@@ -95,7 +84,6 @@ export default function DashboardPage({ kind }: Props) {
           {kind === 'cases' && <CasesDashboard records={records} month={month} />}
           {kind === 'activities' && <ActivitiesDashboard records={records} month={month} />}
           {kind === 'finance' && <FinanceDashboard records={records} units={units} month={month} />}
-          {kind === 'voice' && <VoiceDashboard data={engagement} />}
         </>
       )}
     </section>

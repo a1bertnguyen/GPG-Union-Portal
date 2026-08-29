@@ -1,0 +1,14 @@
+ALTER TABLE union_activities ADD COLUMN event_time TIME;
+ALTER TABLE union_activities ADD COLUMN location VARCHAR(300);
+ALTER TABLE union_activities ADD COLUMN program_pic VARCHAR(150);
+ALTER TABLE union_activities ADD COLUMN invited_count INT NOT NULL DEFAULT 0;
+ALTER TABLE union_activities ADD COLUMN employee_group VARCHAR(500);
+ALTER TABLE union_activities ADD COLUMN actual_content VARCHAR(3000);
+ALTER TABLE union_activities ADD COLUMN plan_difference VARCHAR(2000);
+ALTER TABLE union_activities ADD COLUMN workers_reached INT NOT NULL DEFAULT 0;
+ALTER TABLE union_activities ADD COLUMN output_proposal VARCHAR(2000);
+ALTER TABLE union_activities ADD COLUMN communication_content VARCHAR(2000);
+ALTER TABLE union_activities ADD COLUMN strengths VARCHAR(2000);
+ALTER TABLE union_activities ADD COLUMN weaknesses VARCHAR(2000);
+ALTER TABLE union_activities ADD COLUMN follow_up_issue VARCHAR(2000);
+ALTER TABLE union_activities ADD COLUMN follow_up_status VARCHAR(60);

@@ -31,6 +31,9 @@ public class WelfareRecord extends BaseEntity {
     @Column(name = "policy_name", length = 180)
     private String policyName;
 
+    @Column(name = "policy_id")
+    private Long policyId;
+
     @ManyToOne(fetch = FetchType.EAGER, optional = false)
     @JoinColumn(name = "union_unit_id", nullable = false)
     private UnionUnit unionUnit;

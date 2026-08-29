@@ -16,7 +16,6 @@ export default function PortalApp({ session, onLogout }: Props) {
   const [active, setActive] = useState<PageKey>(() => session.user.role === 'ADMIN' ? 'dashboard' : 'home')
   const [units, setUnits] = useState<UnionUnit[]>([])
   const [menuOpen, setMenuOpen] = useState(false)
-  const [createActivityRequested, setCreateActivityRequested] = useState(false)
   const isAdmin = session.user.role === 'ADMIN'
 
   useEffect(() => {
@@ -29,11 +28,6 @@ export default function PortalApp({ session, onLogout }: Props) {
   const selectPage = (key: PageKey) => {
     setActive(key)
     setMenuOpen(false)
-  }
-
-  const createActivity = () => {
-    setCreateActivityRequested(true)
-    selectPage('activities')
   }
 
   return (
@@ -56,10 +50,7 @@ export default function PortalApp({ session, onLogout }: Props) {
           active={active}
           session={session}
           units={units}
-          createActivityRequested={createActivityRequested}
           onNavigate={selectPage}
-          onCreateActivity={createActivity}
-          onInitialCreateOpened={() => setCreateActivityRequested(false)}
         />
       </main>
       {menuOpen && <button className="menu-scrim" aria-label="Đóng menu" onClick={() => setMenuOpen(false)} />}

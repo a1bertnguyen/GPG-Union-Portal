@@ -55,15 +55,19 @@ public class SecurityConfig {
                                 "/api/auth/me", "/api/dashboard", "/api/units", "/api/members", "/api/members/export.xlsx",
                                 "/api/member-changes", "/api/member-documents", "/api/member-documents/*/download",
                                 "/api/activity-media", "/api/activity-media/*/download",
-                                "/api/welfare", "/api/cases", "/api/activities", "/api/finance",
+                                "/api/document-library", "/api/document-library/*/download",
+                                "/api/welfare-documents", "/api/welfare-documents/*/download",
+                                "/api/finance-documents", "/api/finance-documents/*/download",
+                                "/api/welfare", "/api/welfare-policies", "/api/welfare-policies/export.xlsx",
+                                "/api/cases", "/api/activities", "/api/finance",
                                 "/api/finance/summary", "/api/surveys", "/api/engagement",
-                                "/api/reports", "/api/reports/monthly", "/api/realtime/events")
+                                "/api/reports", "/api/reports/monthly", "/api/kpi", "/api/realtime/events")
                                 .hasAnyRole("ADMIN", "USER")
                         // Whole-dataset numbers behind the metric cards, status dropdowns and analytics
                         // bars on the same screens as the list endpoints above.
                         .requestMatchers(HttpMethod.GET,
                                 "/api/meta/enum-labels",
-                                "/api/units/facets", "/api/members/facets", "/api/welfare/facets",
+                                "/api/units/facets", "/api/members/facets", "/api/welfare/facets", "/api/welfare-policies/facets",
                                 "/api/cases/facets", "/api/cases/issue-groups", "/api/activities/facets",
                                 "/api/finance/facets", "/api/surveys/facets",
                                 "/api/member-changes/facets", "/api/member-documents/facets",
@@ -72,19 +76,32 @@ public class SecurityConfig {
                                 .hasAnyRole("ADMIN", "USER")
                         .requestMatchers("/api/spreadsheets/units/**", "/api/spreadsheets/users/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/spreadsheets/**").hasAnyRole("ADMIN", "USER")
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/spreadsheets/welfare/import", "/api/spreadsheets/welfare-policies/import")
+                                .hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/spreadsheets/**").hasAnyRole("ADMIN", "USER")
                         .requestMatchers(HttpMethod.POST, "/api/surveys/*/responses").hasAnyRole("ADMIN", "USER")
-                        .requestMatchers(HttpMethod.POST, "/api/member-changes", "/api/member-documents", "/api/activity-media").hasAnyRole("ADMIN", "USER")
+                        .requestMatchers(HttpMethod.POST, "/api/welfare/*/approve").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/cases/*/approve").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/reports/*/approve").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/cases/*/submit-approval").hasAnyRole("ADMIN", "USER")
+                        .requestMatchers(HttpMethod.POST, "/api/member-changes", "/api/member-documents", "/api/activity-media", "/api/welfare-documents", "/api/finance-documents").hasAnyRole("ADMIN", "USER")
+                        .requestMatchers(HttpMethod.POST, "/api/document-library", "/api/welfare-policies").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/reports").hasRole("USER")
                         .requestMatchers(HttpMethod.POST,
                                 "/api/members", "/api/welfare", "/api/cases", "/api/activities",
-                                "/api/finance", "/api/reports", "/api/surveys").hasAnyRole("ADMIN", "USER")
+                                "/api/finance", "/api/surveys").hasAnyRole("ADMIN", "USER")
+                        .requestMatchers(HttpMethod.PUT, "/api/reports/*").hasRole("USER")
+                        .requestMatchers(HttpMethod.PUT, "/api/welfare-policies/*").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT,
                                 "/api/members/*", "/api/welfare/*", "/api/cases/*", "/api/activities/*",
-                                "/api/finance/*", "/api/reports/*", "/api/surveys/*").hasAnyRole("ADMIN", "USER")
+                                "/api/finance/*", "/api/surveys/*").hasAnyRole("ADMIN", "USER")
+                        .requestMatchers(HttpMethod.DELETE,
+                                "/api/document-library/*", "/api/welfare-policies/*").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE,
                                 "/api/members/*", "/api/welfare/*", "/api/cases/*", "/api/activities/*",
                                 "/api/finance/*", "/api/reports/*", "/api/surveys/*",
-                                "/api/member-documents/*", "/api/activity-media/*").hasAnyRole("ADMIN", "USER")
+                                "/api/member-documents/*", "/api/activity-media/*", "/api/welfare-documents/*", "/api/finance-documents/*").hasAnyRole("ADMIN", "USER")
                         .anyRequest().hasRole("ADMIN"))
                 .oauth2ResourceServer(oauth -> oauth
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtConverter))

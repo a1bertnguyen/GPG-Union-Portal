@@ -8,8 +8,21 @@ import type { BaseRecord, CaseGroupCount, UnionUnit } from '../types'
 
 type CommonProps = { units: UnionUnit[] }
 const today = () => new Date().toISOString().slice(0, 10)
+const isOpenCase = (item: BaseRecord) => item.status !== 'CLOSED'
+const needsImmediateEscalation = (item: BaseRecord) => isOpenCase(item)
+  && (['HIGH', 'CRITICAL'].includes(String(item.severity ?? '')) || Number(item.affectedPeople ?? 0) >= 10)
+const reportStatus = (status: unknown) => {
+  const value = String(status ?? '')
+  if (['CLASSIFYING', 'ASSIGNED', 'IN_PROGRESS'].includes(value)) return 'IN_PROGRESS'
+  if (['WAITING_RESPONSE', 'PENDING_APPROVAL'].includes(value)) return 'WAITING_RESPONSE'
+  return value
+}
 
-export function CasesInsightPage({ units, mode }: CommonProps & { mode: 'reports' | 'analytics' }) {
+export function CasesInsightPage({ units, mode, isAdmin, unitCode }: CommonProps & {
+  mode: 'reports' | 'analytics'
+  isAdmin: boolean
+  unitCode?: string
+}) {
   const [unitFilter, setUnitFilter] = useState('')
   const [tracking, setTracking] = useState('')
   const [search, setSearch] = useState('')
@@ -44,24 +57,31 @@ export function CasesInsightPage({ units, mode }: CommonProps & { mode: 'reports
   const maxGroup = Math.max(...groups.map(group => group.count), 1)
 
   const filterBar = <TableFilterBar>
-    <FilterField label="Công ty"><select aria-label="Lọc theo CĐCS" value={unitFilter} onChange={event => setUnitFilter(event.target.value)}><option value="">Tất cả</option>{units.map(unit => <option key={unit.id} value={unit.id}>{unit.code}</option>)}</select></FilterField>
+    {isAdmin
+      ? <FilterField label="CĐCS"><select aria-label="Lọc theo CĐCS" value={unitFilter} onChange={event => setUnitFilter(event.target.value)}><option value="">Tất cả</option>{units.map(unit => <option key={unit.id} value={unit.id}>{unit.code}</option>)}</select></FilterField>
+      : <FilterField label="CĐCS"><strong>{unitCode ?? 'Đơn vị của tài khoản'}</strong></FilterField>}
     <FilterField label="Theo dõi"><select aria-label="Lọc nhanh nghiệp vụ" value={tracking} onChange={event => setTracking(event.target.value)}><option value="">Tất cả</option><option value="due24">Đến hạn 24h</option><option value="overdue">Quá hạn</option><option value="repeated">Vụ việc lặp lại</option><option value="many">Ảnh hưởng nhiều NLĐ</option></select></FilterField>
-    <FilterField label="Tìm kiếm" search><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Mã / người gửi / nhóm vấn đề…" /></FilterField>
+    <FilterField label="Tìm kiếm" search><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Mã / nhóm vấn đề / PIC…" /></FilterField>
   </TableFilterBar>
 
   return <section className="page-section">
-    <div className="page-heading"><div><p className="eyebrow">Vụ việc / Dashboard con</p><h1>{mode === 'reports' ? 'Báo cáo vụ việc' : 'Phân tích vụ việc'}</h1><p>{mode === 'reports' ? 'Theo dõi tiến độ và các hồ sơ cần phản hồi theo workflow thống nhất.' : 'Nhận diện nhóm vấn đề lặp lại, mức ảnh hưởng và điểm nghẽn quá hạn.'}</p></div></div>
+    <div className="page-heading"><div><p className="eyebrow">Vụ việc / Dashboard con</p><h1>{mode === 'reports' ? 'Báo cáo vụ việc' : 'Phân tích vụ việc'}</h1><p>{mode === 'reports' ? 'Bảng theo dõi tiến độ đã ẩn tên người lao động; mỗi dòng dùng mã vụ việc duy nhất.' : 'Nhận diện nhóm vấn đề lặp lại, mức ảnh hưởng và điểm nghẽn quá hạn.'}</p></div></div>
     {error && <div className="alert alert--danger">{error}</div>}
 
+    {Number(metrics.urgentEscalation ?? 0) > 0 && <div className="alert alert--danger case-escalation-alert">
+      <strong>Báo ngay CĐ GPG / Ban CSNLĐ</strong>
+      <span>{metrics.urgentEscalation} vụ việc đang mở ảnh hưởng nhiều NLĐ hoặc có rủi ro cao. Không chờ báo cáo tháng.</span>
+    </div>}
+
     <div className="metric-grid metric-grid--compact insight-metrics">
-      <article className="metric-card metric-card--blue"><span>Đang mở</span><strong>{metrics.open ?? 0}</strong><small>Hồ sơ chưa đóng</small></article>
+      <article className="metric-card metric-card--blue"><span>Đến hạn 24h</span><strong>{metrics.due24 ?? 0}</strong><small>Cần ưu tiên phản hồi</small></article>
       <article className="metric-card metric-card--orange"><span>Quá hạn</span><strong>{metrics.overdue ?? 0}</strong><small>Cần lý do và ETA mới</small></article>
       <article className="metric-card metric-card--teal"><span>Lặp lại</span><strong>{metrics.repeated ?? 0}</strong><small>Cùng nhóm vấn đề</small></article>
-      <article className="metric-card metric-card--green"><span>NLĐ ảnh hưởng</span><strong>{metrics.affectedPeople ?? 0}</strong><small>Trong phạm vi lọc</small></article>
+      <article className="metric-card metric-card--green"><span>Ảnh hưởng nhiều NLĐ</span><strong>{metrics.wideImpact ?? 0}</strong><small>Từ 10 người trở lên</small></article>
     </div>
 
     {mode === 'reports' ? <>
-      <div className="workflow-stepper">{['Xác minh', 'Phân loại', 'Giao PIC', 'Xử lý', 'Phản hồi', 'Đóng'].map((step, index) => <div key={step}><span>{index + 1}</span><strong>{step}</strong></div>)}</div>
+      <div className="workflow-stepper workflow-stepper--case">{['Mới', 'Đang xác minh', 'Đang xử lý', 'Chờ phản hồi', 'Đã đóng'].map((step, index) => <div key={step}><span>{index + 1}</span><strong>{step}</strong></div>)}</div>
       <ListCard
         list={list}
         title={`${list.total} vụ việc`}
@@ -72,10 +92,24 @@ export function CasesInsightPage({ units, mode }: CommonProps & { mode: 'reports
         </>}
         filters={filterBar}
       >
-        <div className="table-wrap"><table><thead><tr><th>Mã / người gửi</th><th>Thông tin bắt buộc</th><th>PIC</th><th>Hạn</th><th>Trạng thái</th></tr></thead><tbody>
-          {list.loading && <tr><td colSpan={5} className="empty-cell">Đang tải dữ liệu…</td></tr>}
-          {!list.loading && !list.rows.length && <tr><td colSpan={5} className="empty-cell">{filtersActive ? 'Không có vụ việc phù hợp bộ lọc.' : 'Chưa có vụ việc.'}</td></tr>}
-          {!list.loading && list.rows.map(item => <tr key={item.id}><td><strong>{String(item.caseCode)}</strong><small className="table-subtext">{String(item.requesterName)} · {item.unionUnit?.code}</small></td><td>{String(item.issueGroup)} · {Number(item.affectedPeople)} NLĐ<small className="table-subtext">{String(item.source ?? 'Chưa rõ nguồn')} · {String(item.attachmentNote ?? 'Chưa có tài liệu')}</small></td><td>{String(item.ownerName)}</td><td>{formatDate(item.deadline)}</td><td><StatusBadge value={item.status} /></td></tr>)}
+        <div className="table-wrap case-report-table"><table><thead><tr><th>Mã</th><th>Ngày nhận</th><th>Đơn vị</th><th>Nhóm vấn đề</th><th>Mức độ</th><th>PIC</th><th>Deadline</th><th>Trạng thái</th><th>Kết quả / phản hồi</th></tr></thead><tbody>
+          {list.loading && <tr><td colSpan={9} className="empty-cell">Đang tải dữ liệu…</td></tr>}
+          {!list.loading && !list.rows.length && <tr><td colSpan={9} className="empty-cell">{filtersActive ? 'Không có vụ việc phù hợp bộ lọc.' : 'Chưa có vụ việc.'}</td></tr>}
+          {!list.loading && list.rows.map(item => {
+            const overdue = isOpenCase(item) && String(item.deadline ?? '') < today()
+            const escalation = needsImmediateEscalation(item)
+            return <tr key={item.id} className={escalation ? 'case-report-row--urgent' : undefined}>
+              <td><strong>{String(item.caseCode)}</strong></td>
+              <td>{formatDate(item.receivedDate)}</td>
+              <td>{item.unionUnit?.code ?? '—'}</td>
+              <td>{String(item.issueGroup ?? '—')}<small className="table-subtext">{Number(item.affectedPeople ?? 0)} NLĐ ảnh hưởng</small></td>
+              <td><StatusBadge value={item.severity} />{escalation && <small className="table-subtext table-subtext--danger">Báo ngay CĐ GPG / Ban CSNLĐ</small>}</td>
+              <td>{String(item.ownerName ?? '—')}</td>
+              <td>{formatDate(item.deadline)}{overdue && <small className={item.overdueReason ? 'table-subtext' : 'table-subtext table-subtext--danger'}>{String(item.overdueReason ?? 'Thiếu lý do / ETA mới')}</small>}</td>
+              <td><StatusBadge value={reportStatus(item.status)} /></td>
+              <td>{String(item.resultText ?? '—')}</td>
+            </tr>
+          })}
         </tbody></table></div>
       </ListCard>
     </> : <>

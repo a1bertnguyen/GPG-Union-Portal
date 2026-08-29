@@ -45,7 +45,8 @@ public class SpecAggregates {
         }
     }
 
-    public record FinanceTotals(BigDecimal income, BigDecimal expense, long incompleteDocuments) {
+    public record FinanceTotals(BigDecimal income, BigDecimal expense, BigDecimal advance,
+                                long incompleteDocuments) {
     }
 
     /**
@@ -78,7 +79,7 @@ public class SpecAggregates {
         return new CountMetrics(toLong(row[0]), Map.copyOf(values));
     }
 
-    /** Income, expense and incomplete-document count from the same scoped finance query. */
+    /** Income, total expense (including advances), advances and incomplete-document count. */
     public FinanceTotals financeTotals(Specification<FinanceEntry> scope) {
         CriteriaBuilder cb = entityManager.getCriteriaBuilder();
         CriteriaQuery<Object[]> query = cb.createQuery(Object[].class);
@@ -88,7 +89,12 @@ public class SpecAggregates {
                 .when(cb.equal(root.get("entryType"), FinanceEntryType.INCOME), amount)
                 .otherwise(BigDecimal.ZERO);
         Expression<BigDecimal> expense = cb.<BigDecimal>selectCase()
-                .when(cb.equal(root.get("entryType"), FinanceEntryType.EXPENSE), amount)
+                .when(cb.or(
+                        cb.equal(root.get("entryType"), FinanceEntryType.EXPENSE),
+                        cb.equal(root.get("entryType"), FinanceEntryType.ADVANCE)), amount)
+                .otherwise(BigDecimal.ZERO);
+        Expression<BigDecimal> advance = cb.<BigDecimal>selectCase()
+                .when(cb.equal(root.get("entryType"), FinanceEntryType.ADVANCE), amount)
                 .otherwise(BigDecimal.ZERO);
         Expression<Long> incomplete = cb.<Long>selectCase()
                 .when(cb.equal(root.get("documentStatus"), DocumentStatus.INCOMPLETE), 1L)
@@ -97,13 +103,15 @@ public class SpecAggregates {
         query.multiselect(
                 cb.coalesce(cb.sum(income), BigDecimal.ZERO),
                 cb.coalesce(cb.sum(expense), BigDecimal.ZERO),
+                cb.coalesce(cb.sum(advance), BigDecimal.ZERO),
                 cb.coalesce(cb.sum(incomplete), 0L));
         applyWhere(query, scope, root, cb);
         Object[] row = entityManager.createQuery(query).getSingleResult();
         return new FinanceTotals(
                 row[0] instanceof BigDecimal value ? value : BigDecimal.ZERO,
                 row[1] instanceof BigDecimal value ? value : BigDecimal.ZERO,
-                toLong(row[2]));
+                row[2] instanceof BigDecimal value ? value : BigDecimal.ZERO,
+                toLong(row[3]));
     }
 
     /** {@code SUM(field)} over the rows matching {@code spec}; zero when nothing matches. */

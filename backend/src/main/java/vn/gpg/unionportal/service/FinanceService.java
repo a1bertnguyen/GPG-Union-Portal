@@ -10,7 +10,10 @@ import vn.gpg.unionportal.dto.ApiModels.ListFacets;
 import vn.gpg.unionportal.dto.ListQuery;
 import vn.gpg.unionportal.exception.ResourceNotFoundException;
 import vn.gpg.unionportal.mapper.EntityMapper;
+import vn.gpg.unionportal.model.DomainEnums.DocumentStatus;
+import vn.gpg.unionportal.model.DomainEnums.FinanceEntryType;
 import vn.gpg.unionportal.model.FinanceEntry;
+import vn.gpg.unionportal.model.WelfareRecord;
 import vn.gpg.unionportal.repository.FinanceEntryRepository;
 import vn.gpg.unionportal.spec.FinanceSpecs;
 import vn.gpg.unionportal.spec.SpecAggregates;
@@ -19,6 +22,8 @@ import vn.gpg.unionportal.spec.Specs;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 
 @Service
 @Transactional(readOnly = true)
@@ -56,6 +61,7 @@ public class FinanceService {
         metrics.put("total", repository.count(filtered));
         metrics.put("income", totals.income());
         metrics.put("expense", totals.expense());
+        metrics.put("advance", totals.advance());
         metrics.put("balance", totals.income().subtract(totals.expense()));
         metrics.put("incompleteDocuments", totals.incompleteDocuments());
         return new ListFacets(
@@ -77,6 +83,33 @@ public class FinanceService {
         currentUser.requireUnitAccess(request.unionUnitId());
         var saved = repository.save(mapper.apply(new FinanceEntry(), request));
         events.changed("finance", "CREATED", saved.getId(), saved.getUnionUnit().getId());
+        return saved;
+    }
+
+    @Transactional
+    public FinanceEntry createForApprovedWelfare(WelfareRecord welfare) {
+        String entryCode = "PC-CL-" + welfare.getId();
+        var existing = repository.findByEntryCodeIgnoreCase(entryCode);
+        if (existing.isPresent()) return existing.get();
+
+        BigDecimal policyAmount = welfare.getStandardAmount();
+        if (policyAmount == null || policyAmount.signum() <= 0) {
+            throw new IllegalArgumentException("Chính sách chăm lo phải có mức hỗ trợ lớn hơn 0 trước khi duyệt");
+        }
+
+        var entry = new FinanceEntry();
+        entry.setEntryCode(entryCode);
+        entry.setUnionUnit(welfare.getUnionUnit());
+        entry.setTransactionDate(LocalDate.now());
+        entry.setEntryType(FinanceEntryType.EXPENSE);
+        entry.setCategory("Chi chăm lo");
+        entry.setAmount(policyAmount);
+        entry.setDescription("Chi theo chính sách " + welfare.getPolicyName()
+                + " · hồ sơ " + welfare.getRecordCode() + " · " + welfare.getBeneficiaryName());
+        entry.setDocumentNumber(welfare.getRecordCode());
+        entry.setDocumentStatus(DocumentStatus.INCOMPLETE);
+        var saved = repository.save(entry);
+        events.changed("finance", "CREATED_FROM_WELFARE", saved.getId(), saved.getUnionUnit().getId());
         return saved;
     }
 
