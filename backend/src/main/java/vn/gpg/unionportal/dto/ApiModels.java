@@ -101,7 +101,7 @@ public final class ApiModels {
             @Size(max = 60) String ethnicity,
             @Size(max = 150) String placeOfBirth,
             @Size(max = 20) String nationalId,
-            boolean partyMember,
+            Boolean partyMember,
             @Size(max = 100) String education,
             @Size(max = 150) String specialization,
             @Size(max = 100) String politicalTheory,

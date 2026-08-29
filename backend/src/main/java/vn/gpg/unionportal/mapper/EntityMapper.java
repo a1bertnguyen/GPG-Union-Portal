@@ -56,7 +56,7 @@ public class EntityMapper {
         entity.setEthnicity(trimToNull(request.ethnicity()));
         entity.setPlaceOfBirth(trimToNull(request.placeOfBirth()));
         entity.setNationalId(trimToNull(request.nationalId()));
-        entity.setPartyMember(request.partyMember());
+        entity.setPartyMember(Boolean.TRUE.equals(request.partyMember()));
         entity.setEducation(trimToNull(request.education()));
         entity.setSpecialization(trimToNull(request.specialization()));
         entity.setPoliticalTheory(trimToNull(request.politicalTheory()));
