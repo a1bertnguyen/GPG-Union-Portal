@@ -46,6 +46,7 @@ export const navGroups: SidebarNavGroup[] = [
     { key: 'dashboardCases', label: 'Vụ việc', mark: 'VV' },
     { key: 'dashboardActivities', label: 'Hoạt động', mark: 'HĐ' },
     { key: 'dashboardFinance', label: 'Tài chính', mark: 'TC' },
+    { key: 'kpi', label: 'Báo cáo KPI', mark: 'KPI' },
   ] },
   { label: 'Nghiệp vụ', items: [
     { key: 'members', label: 'Đoàn viên', mark: 'ĐV', children: [
@@ -71,7 +72,6 @@ export const navGroups: SidebarNavGroup[] = [
   { label: 'Quản trị', items: [
     { key: 'units', label: 'CĐCS / BCH', mark: 'ĐV', adminOnly: true },
     { key: 'users', label: 'Tài khoản', mark: 'TK', adminOnly: true },
-    { key: 'kpi', label: 'Xét KPI CĐCS', mark: 'KPI', adminOnly: true },
   ] },
 ]
 

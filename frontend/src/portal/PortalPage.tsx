@@ -44,7 +44,7 @@ export default function PortalPage({
   if (active === 'dashboardActivities') return <DashboardPage kind="activities" />
   if (active === 'dashboardFinance') return <DashboardPage kind="finance" />
   if (active === 'documents') return <DocumentLibraryPage units={units} isAdmin={isAdmin} currentUnitName={session.user.unionUnitName} />
-  if (active === 'kpi') return <KpiPage units={units} />
+  if (active === 'kpi') return <KpiPage units={units} isAdmin={isAdmin} currentUnitId={session.user.unionUnitId} currentUnitCode={session.user.unionUnitCode} currentUnitName={session.user.unionUnitName} />
   if (active === 'reports') return <ReportsPage units={units} isAdmin={isAdmin} currentUnitId={session.user.unionUnitId} currentUnitName={session.user.unionUnitName} currentUserName={session.user.fullName} />
   if (active === 'users') return <UsersPage units={units} />
   if (active === 'memberChanges') return <MemberChangesPage units={units} />
