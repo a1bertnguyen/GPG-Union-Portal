@@ -14,13 +14,13 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
+import vn.gpg.unionportal.dto.KpiModels.PeriodType;
 import vn.gpg.unionportal.dto.ListQuery;
 import vn.gpg.unionportal.repository.UnionUnitRepository;
 import vn.gpg.unionportal.service.DocumentLibraryService;
 import vn.gpg.unionportal.service.KpiService;
 
 import java.time.Instant;
-import java.time.YearMonth;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -68,12 +68,11 @@ class DocumentLibraryAndKpiTests {
         var gpl = units.findByCodeIgnoreCase("GPL").orElseThrow();
         authenticateUser(vcs.getId());
 
-        var result = kpi.evaluate(YearMonth.of(2026, 8), gpl.getId());
+        var result = kpi.evaluate(PeriodType.MONTH, 2026, 8, gpl.getId());
 
-        assertThat(result).hasSize(1);
-        assertThat(result.getFirst().unionUnitId()).isEqualTo(vcs.getId());
-        assertThat(result.getFirst().criteria()).hasSize(10);
-        assertThat(result.getFirst().score()).isBetween(0, 100);
+        assertThat(result.results()).hasSize(1);
+        assertThat(result.results().getFirst().unionUnitId()).isEqualTo(vcs.getId());
+        assertThat(result.results().getFirst().details()).hasSize(31);
     }
 
     @Test

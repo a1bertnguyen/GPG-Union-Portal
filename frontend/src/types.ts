@@ -328,24 +328,3 @@ export interface DocumentLibraryItem {
   uploadedBy: string
   createdAt: string
 }
-
-export interface KpiCriterion {
-  code: string
-  label: string
-  target: string
-  actual: number
-  actualLabel: string
-  met: boolean
-  note: string
-}
-
-export interface UnitKpi {
-  unionUnitId: number
-  unionUnitCode: string
-  unionUnitName: string
-  month: string
-  score: number
-  rating: string
-  passedCriteria: number
-  criteria: KpiCriterion[]
-}

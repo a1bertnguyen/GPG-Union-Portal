@@ -62,7 +62,9 @@ public class SecurityConfig {
                                 "/api/welfare", "/api/welfare-policies", "/api/welfare-policies/export.xlsx",
                                 "/api/cases", "/api/activities", "/api/finance",
                                 "/api/finance/summary", "/api/surveys", "/api/engagement",
-                                "/api/reports", "/api/reports/monthly", "/api/kpi", "/api/realtime/events")
+                                "/api/reports", "/api/reports/monthly", "/api/kpi", "/api/kpi/metadata",
+                                "/api/kpi/evidence/*/*",
+                                "/api/realtime/events")
                                 .hasAnyRole("ADMIN", "USER")
                         // Whole-dataset numbers behind the metric cards, status dropdowns and analytics
                         // bars on the same screens as the list endpoints above.

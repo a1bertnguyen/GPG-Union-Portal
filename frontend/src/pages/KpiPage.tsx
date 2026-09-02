@@ -1,28 +1,32 @@
-import { useState } from 'react'
-import type { CSSProperties } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import {
+  downloadKpiEvidenceAttachment,
+  loadKpiDashboard,
+  loadKpiEvidence,
+  loadKpiMetadata,
+} from '../kpiApi'
+import {
+  classificationTone,
+  defaultKpiPeriod,
+  formatKpiNumber,
+  formatKpiRate,
+  KPI_PERIOD_TYPES,
+  kpiPeriodLabel,
+  kpiPeriodOptions,
+  kpiStatusLabel,
+  kpiYearOptions,
+} from '../kpiModel'
+import type {
+  KpiDashboardView,
+  KpiDetailView,
+  KpiEvidenceAttachmentView,
+  KpiEvidenceRecordView,
+  KpiEvidenceView,
+  KpiMetadataView,
+  KpiPeriodType,
+  KpiUnitResultView,
+} from '../kpiModel'
 import type { UnionUnit } from '../types'
-
-type PeriodMode = 'quarter' | 'year'
-
-type KpiCategory = {
-  code: string
-  label: string
-  description: string
-  score: number
-  target: number
-  change: number
-}
-
-type MockUnitKpi = {
-  unitId: number
-  unitCode: string
-  unitName: string
-  quarterlyScores: number[]
-  memberCount: number
-  reportProgress: number
-  updatedAt: string
-  categories: KpiCategory[]
-}
 
 type Props = {
   units: UnionUnit[]
@@ -32,339 +36,549 @@ type Props = {
   currentUnitName?: string
 }
 
-const FALLBACK_UNITS: UnionUnit[] = [
-  { id: 1, code: 'VCS', name: 'CĐCS VCS', companyName: 'VCS', legalStatus: 'ACTIVE' },
-  { id: 2, code: 'GPL', name: 'CĐCS GPL', companyName: 'GPL', legalStatus: 'ACTIVE' },
-  { id: 3, code: 'AZC', name: 'CĐCS AZC', companyName: 'AZC', legalStatus: 'ACTIVE' },
-  { id: 4, code: 'GPD', name: 'CĐCS GPD', companyName: 'GPD', legalStatus: 'ACTIVE' },
-]
+const timestampFormatter = new Intl.DateTimeFormat('vi-VN', {
+  dateStyle: 'short',
+  timeStyle: 'short',
+})
 
-const MOCK_PROFILES = [
-  { scores: [84, 88, 92, 94], members: 326, progress: 100, updatedAt: '28/08/2026 · 16:42' },
-  { scores: [78, 82, 86, 89], members: 248, progress: 92, updatedAt: '28/08/2026 · 15:10' },
-  { scores: [72, 76, 79, 83], members: 194, progress: 76, updatedAt: '27/08/2026 · 17:25' },
-  { scores: [87, 90, 93, 95], members: 287, progress: 100, updatedAt: '29/08/2026 · 09:18' },
-]
-
-const CATEGORY_META = [
-  { code: 'WELFARE', label: 'Chăm lo & phúc lợi', description: 'Hồ sơ đúng hạn, đủ chứng từ', target: 90, offset: 5 },
-  { code: 'CASES', label: 'Kiến nghị', description: 'Xử lý đúng SLA, có PIC xử lý', target: 85, offset: -3 },
-  { code: 'ACTIVITIES', label: 'Chương trình công đoàn', description: 'Tỷ lệ tham gia và mức hữu ích', target: 80, offset: 2 },
-  { code: 'MEMBERS', label: 'Dữ liệu đoàn viên', description: 'Hồ sơ đầy đủ và cập nhật', target: 95, offset: 4 },
-  { code: 'SURVEYS', label: 'Khảo sát & lắng nghe', description: 'Tỷ lệ phản hồi người lao động', target: 75, offset: -7 },
-  { code: 'REPORTS', label: 'Báo cáo & tuân thủ', description: 'Nộp báo cáo đúng kỳ, đủ minh chứng', target: 90, offset: 1 },
-]
-
-const clampScore = (value: number) => Math.max(52, Math.min(100, value))
-const average = (values: number[]) => values.length
-  ? values.reduce((sum, value) => sum + value, 0) / values.length
-  : 0
-
-const ratingFor = (score: number) => {
-  if (score >= 90) return 'Xuất sắc'
-  if (score >= 80) return 'Tốt'
-  if (score >= 65) return 'Đạt'
-  return 'Cần cải thiện'
+function formatTimestamp(value: string | undefined): string {
+  if (!value) return '—'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : timestampFormatter.format(date)
 }
 
-const ratingTone = (score: number) => {
-  if (score >= 90) return 'excellent'
-  if (score >= 80) return 'good'
-  if (score >= 65) return 'passed'
-  return 'attention'
+function visualPercent(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return '0%'
+  return `${Math.max(0, Math.min(100, value))}%`
 }
 
-const buildMockRows = (units: UnionUnit[], year: number, quarter: number): MockUnitKpi[] => {
-  const yearOffset = (year - 2026) * 2
-  return units.map((unit, index) => {
-    const profile = MOCK_PROFILES[index % MOCK_PROFILES.length]
-    const quarterlyScores = profile.scores.map(score => clampScore(score + yearOffset))
-    const activeScore = quarterlyScores[quarter - 1]
-    return {
-      unitId: unit.id,
-      unitCode: unit.code,
-      unitName: unit.name,
-      quarterlyScores,
-      memberCount: profile.members + index * 11,
-      reportProgress: clampScore(profile.progress + yearOffset),
-      updatedAt: profile.updatedAt,
-      categories: CATEGORY_META.map((category, categoryIndex) => ({
-        code: category.code,
-        label: category.label,
-        description: category.description,
-        target: category.target,
-        score: clampScore(activeScore + category.offset + ((index + categoryIndex) % 3) - 1),
-        change: ((index + categoryIndex) % 5) - 1,
-      })),
+function formatMemberCount(value: number | null): string {
+  return value === null ? '—' : value.toLocaleString('vi-VN')
+}
+
+function selectUnit(
+  unit: KpiUnitResultView,
+  setSelectedUnitId: (value: number) => void,
+  setSelectedGroupCode: (value: string | null) => void,
+  setSelectedKpiCode: (value: string | null) => void,
+) {
+  setSelectedUnitId(unit.unionUnitId)
+  setSelectedGroupCode(unit.groups[0]?.groupCode ?? null)
+  setSelectedKpiCode(null)
+}
+
+function KpiEvidencePanel({ detail }: { detail: KpiDetailView | undefined }) {
+  const evidenceRequestRef = useRef<AbortController | null>(null)
+  const [activeEvidence, setActiveEvidence] = useState<KpiEvidenceView | null>(null)
+  const [evidenceRecord, setEvidenceRecord] = useState<KpiEvidenceRecordView | null>(null)
+  const [evidenceLoading, setEvidenceLoading] = useState(false)
+  const [evidenceError, setEvidenceError] = useState('')
+  const [downloadingAttachmentId, setDownloadingAttachmentId] = useState<number | null>(null)
+  const [downloadError, setDownloadError] = useState('')
+
+  useEffect(() => () => evidenceRequestRef.current?.abort(), [])
+
+  const openEvidence = (evidence: KpiEvidenceView) => {
+    if (evidence.redacted || !evidence.evidenceUrl) return
+    evidenceRequestRef.current?.abort()
+    const controller = new AbortController()
+    evidenceRequestRef.current = controller
+    setActiveEvidence(evidence)
+    setEvidenceRecord(null)
+    setEvidenceLoading(true)
+    setEvidenceError('')
+    setDownloadError('')
+
+    loadKpiEvidence(evidence.evidenceUrl, controller.signal).then(response => {
+      if (controller.signal.aborted) return
+      setEvidenceRecord(response)
+    }).catch(reason => {
+      if (controller.signal.aborted) return
+      setEvidenceError(reason instanceof Error ? reason.message : 'Không thể tải chi tiết bản ghi chứng minh.')
+    }).finally(() => {
+      if (controller.signal.aborted || evidenceRequestRef.current !== controller) return
+      evidenceRequestRef.current = null
+      setEvidenceLoading(false)
+    })
+  }
+
+  const downloadAttachment = async (attachment: KpiEvidenceAttachmentView) => {
+    setDownloadingAttachmentId(attachment.id)
+    setDownloadError('')
+    try {
+      await downloadKpiEvidenceAttachment(attachment)
+    } catch (reason) {
+      setDownloadError(reason instanceof Error ? reason.message : 'Không thể tải tệp chứng minh.')
+    } finally {
+      setDownloadingAttachmentId(null)
     }
-  })
+  }
+
+  if (!detail) {
+    return <div className="kpi-evidence-empty">Chọn một KPI để xem cách tính và bản ghi chứng minh.</div>
+  }
+
+  return <div className="kpi-evidence-panel">
+    <div className="kpi-evidence-heading">
+      <div><span>{detail.kpiCode}</span><strong>{detail.name}</strong></div>
+      <span className={`kpi-status kpi-status--${detail.resultStatus.toLowerCase()}`}>{kpiStatusLabel(detail.resultStatus)}</span>
+    </div>
+    <p>{detail.explanation || 'Engine chưa cung cấp giải thích cho KPI này.'}</p>
+    <dl className="kpi-calculation-grid">
+      <div><dt>Tử số</dt><dd>{formatKpiNumber(detail.numerator)}</dd></div>
+      <div><dt>Mẫu số</dt><dd>{formatKpiNumber(detail.denominator)}</dd></div>
+      <div><dt>Mục tiêu</dt><dd>{formatKpiNumber(detail.targetValue)}</dd></div>
+      <div><dt>Điểm chuẩn hóa</dt><dd>{formatKpiNumber(detail.normalizedScore)}</dd></div>
+      <div><dt>Trọng số cấu hình</dt><dd>{formatKpiNumber(detail.weight)}</dd></div>
+      <div><dt>Trọng số hợp lệ</dt><dd>{formatKpiNumber(detail.eligibleWeight)}</dd></div>
+      <div><dt>Điểm đạt được</dt><dd>{formatKpiNumber(detail.earnedPoints)}</dd></div>
+    </dl>
+    <div className="kpi-evidence-list">
+      <div className="kpi-evidence-list__title">
+        <strong>Bản ghi chứng minh</strong>
+        <span>{detail.evidence.length} liên kết nguồn</span>
+      </div>
+      {detail.evidence.length === 0
+        ? <div className="kpi-evidence-empty">KPI này chưa có bản ghi chứng minh được phép hiển thị.</div>
+        : detail.evidence.map(evidence => {
+            const canOpen = !evidence.redacted && Boolean(evidence.evidenceUrl)
+            const isActive = activeEvidence?.evidenceId === evidence.evidenceId
+            const content = <>
+              <div>
+                <strong>{evidence.sourceModule}</strong>
+                <span>{evidence.redacted ? 'Mã hồ sơ đã ẩn theo quyền truy cập' : `Mã nguồn: ${evidence.sourceRecordId}`}</span>
+              </div>
+              <div className="kpi-evidence-tags">
+                <span>{kpiStatusLabel(evidence.role)}</span>
+                <span className={`is-${evidence.validationStatus.toLowerCase()}`}>{kpiStatusLabel(evidence.validationStatus)}</span>
+                <span className={canOpen ? 'kpi-evidence-open-label' : ''}>
+                  {evidence.redacted ? 'Đã ẩn' : canOpen ? 'Xem chi tiết' : 'Chỉ đối soát'}
+                </span>
+              </div>
+            </>
+            return canOpen
+              ? <button
+                  type="button"
+                  aria-controls="kpi-evidence-record"
+                  aria-expanded={isActive}
+                  className={`kpi-evidence-item kpi-evidence-item--button${isActive ? ' is-active' : ''}`}
+                  key={evidence.evidenceId}
+                  onClick={() => openEvidence(evidence)}
+                >{content}</button>
+              : <div className="kpi-evidence-item" key={evidence.evidenceId}>{content}</div>
+          })}
+    </div>
+    {activeEvidence && <section
+      id="kpi-evidence-record"
+      className="kpi-evidence-record"
+      aria-busy={evidenceLoading}
+      aria-live="polite"
+    >
+      {evidenceLoading && <div className="kpi-evidence-record__state" role="status">Đang tải chi tiết bản ghi…</div>}
+      {!evidenceLoading && evidenceError && <div className="kpi-evidence-record__state kpi-evidence-record__state--error" role="alert">
+        <span>{evidenceError}</span>
+        <button type="button" onClick={() => openEvidence(activeEvidence)}>Thử lại</button>
+      </div>}
+      {!evidenceLoading && !evidenceError && evidenceRecord && <>
+        <header>
+          <div><span>{evidenceRecord.sourceModule}</span><strong>{evidenceRecord.title}</strong></div>
+          <small>Mã nguồn: {evidenceRecord.sourceRecordId}</small>
+        </header>
+        {evidenceRecord.fields.length === 0
+          ? <div className="kpi-evidence-record__state">Bản ghi không có trường chi tiết được phép hiển thị.</div>
+          : <dl className="kpi-evidence-fields">{evidenceRecord.fields.map((field, index) => <div key={`${field.label}-${index}`}>
+              <dt>{field.label}</dt>
+              <dd>{field.value || '—'}</dd>
+            </div>)}</dl>}
+        <div className="kpi-evidence-attachments">
+          <div><strong>Tệp đính kèm</strong><span>{evidenceRecord.attachments.length} tệp</span></div>
+          {evidenceRecord.attachments.length === 0
+            ? <small>Không có tệp đính kèm được phép tải.</small>
+            : evidenceRecord.attachments.map(attachment => <button
+                type="button"
+                aria-label={`Tải tệp ${attachment.fileName}`}
+                disabled={downloadingAttachmentId !== null}
+                key={attachment.id}
+                onClick={() => void downloadAttachment(attachment)}
+              >
+                <span>{attachment.fileName}</span>
+                <small>{downloadingAttachmentId === attachment.id ? 'Đang tải…' : 'Tải xuống'}</small>
+              </button>)}
+          {downloadError && <div className="kpi-evidence-download-error" role="alert">{downloadError}</div>}
+        </div>
+      </>}
+    </section>}
+  </div>
 }
-
-const periodScore = (row: MockUnitKpi, mode: PeriodMode, quarter: number) => mode === 'quarter'
-  ? row.quarterlyScores[quarter - 1]
-  : Math.round(average(row.quarterlyScores))
-
-const formatChange = (value: number) => `${value > 0 ? '+' : ''}${value.toFixed(1)}`
 
 export default function KpiPage({ units, isAdmin, currentUnitId, currentUnitCode, currentUnitName }: Props) {
-  const [periodMode, setPeriodMode] = useState<PeriodMode>('quarter')
-  const [year, setYear] = useState(2026)
-  const [quarter, setQuarter] = useState(3)
+  const [today] = useState(() => new Date())
+  const [periodType, setPeriodType] = useState<KpiPeriodType>('MONTH')
+  const [year, setYear] = useState(today.getFullYear())
+  const [period, setPeriod] = useState(defaultKpiPeriod('MONTH', today))
   const [unitId, setUnitId] = useState(isAdmin ? '' : String(currentUnitId ?? ''))
+  const [data, setData] = useState<KpiDashboardView | null>(null)
+  const [metadata, setMetadata] = useState<KpiMetadataView | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [retryKey, setRetryKey] = useState(0)
   const [selectedUnitId, setSelectedUnitId] = useState<number | null>(currentUnitId ?? null)
+  const [selectedGroupCode, setSelectedGroupCode] = useState<string | null>(null)
+  const [selectedKpiCode, setSelectedKpiCode] = useState<string | null>(null)
+  const selectionRef = useRef({ periodType, year, period })
 
-  const availableUnits = units.length ? units : FALLBACK_UNITS
-  const ownUnit = availableUnits.find(unit => unit.id === currentUnitId) ?? {
-    id: currentUnitId ?? -1,
-    code: currentUnitCode ?? 'CĐCS',
-    name: currentUnitName ?? 'CĐCS của bạn',
-    companyName: currentUnitName ?? 'CĐCS của bạn',
-    legalStatus: 'ACTIVE',
-  }
-  const roleScopedUnits = isAdmin ? availableUnits : [ownUnit]
-  const mockRows = buildMockRows(roleScopedUnits, year, quarter)
-  const visibleRows = unitId
-    ? mockRows.filter(row => row.unitId === Number(unitId))
-    : mockRows
-  const rankedRows = [...visibleRows].sort(
-    (left, right) => periodScore(right, periodMode, quarter) - periodScore(left, periodMode, quarter),
-  )
-  const selectedRow = rankedRows.find(row => row.unitId === selectedUnitId) ?? rankedRows[0]
+  useEffect(() => {
+    selectionRef.current = { periodType, year, period }
+  }, [periodType, year, period])
 
-  const summary = (() => {
-    const scores = visibleRows.map(row => periodScore(row, periodMode, quarter))
-    const previousScores = visibleRows.map(row => {
-      if (periodMode === 'year') return Math.round(average(row.quarterlyScores.map(score => score - 3)))
-      return row.quarterlyScores[Math.max(0, quarter - 2)]
+  useEffect(() => {
+    const controller = new AbortController()
+    loadKpiMetadata(controller.signal).then(response => {
+      if (controller.signal.aborted) return
+      const availableYears = kpiYearOptions(today, response.versions)
+      const currentSelection = selectionRef.current
+      const nextYear = availableYears.includes(currentSelection.year)
+        ? currentSelection.year
+        : (availableYears[0] ?? today.getFullYear())
+      let nextType = currentSelection.periodType
+      let nextOptions = kpiPeriodOptions(nextType, nextYear, today, response.versions)
+      if (nextOptions.length === 0) {
+        const fallback = KPI_PERIOD_TYPES
+          .map(option => ({
+            type: option.value,
+            options: kpiPeriodOptions(option.value, nextYear, today, response.versions),
+          }))
+          .find(candidate => candidate.options.length > 0)
+        if (!fallback) {
+          setMetadata(response)
+          setData(null)
+          setLoading(false)
+          return
+        }
+        nextType = fallback.type
+        nextOptions = fallback.options
+      }
+      const nextPeriod = nextOptions.some(option => option.value === currentSelection.period)
+        ? currentSelection.period
+        : (nextOptions.at(-1)?.value ?? 1)
+
+      setMetadata(response)
+      setLoading(true)
+      setError('')
+      setYear(nextYear)
+      setPeriodType(nextType)
+      setPeriod(nextPeriod)
+    }).catch(() => {
+      // The dashboard remains usable for the current year when metadata is temporarily unavailable.
     })
-    return {
-      average: average(scores),
-      change: average(scores) - average(previousScores),
-      reached: scores.filter(score => score >= 80).length,
-      excellent: scores.filter(score => score >= 90).length,
-      attention: scores.filter(score => score < 80).length,
-      leader: rankedRows[0],
-    }
-  })()
+    return () => controller.abort()
+  }, [today])
 
-  const trendValues = [0, 1, 2, 3].map(index => average(visibleRows.map(row => row.quarterlyScores[index])))
-  const trendPoints = trendValues.map((value, index) => {
-    const x = 50 + index * 184
-    const y = 162 - (value - 60) * 3
-    return `${x},${y}`
-  }).join(' ')
-  const distribution = {
-    excellent: visibleRows.filter(row => periodScore(row, periodMode, quarter) >= 90).length,
-    good: visibleRows.filter(row => {
-      const score = periodScore(row, periodMode, quarter)
-      return score >= 80 && score < 90
-    }).length,
-    passed: visibleRows.filter(row => {
-      const score = periodScore(row, periodMode, quarter)
-      return score >= 65 && score < 80
-    }).length,
-    attention: visibleRows.filter(row => periodScore(row, periodMode, quarter) < 65).length,
+  useEffect(() => {
+    const selectablePeriods = kpiPeriodOptions(periodType, year, today, metadata?.versions)
+    if (!selectablePeriods.some(option => option.value === period)) return
+    const controller = new AbortController()
+    queueMicrotask(() => {
+      if (controller.signal.aborted) return
+      setLoading(true)
+      setError('')
+    })
+
+    loadKpiDashboard({
+      periodType,
+      year,
+      period,
+      unitId: unitId ? Number(unitId) : undefined,
+    }, controller.signal).then(response => {
+      if (controller.signal.aborted) return
+      setError('')
+      setData(response)
+      setSelectedUnitId(current => response.results.some(result => result.unionUnitId === current)
+        ? current
+        : (response.results[0]?.unionUnitId ?? null))
+    }).catch(reason => {
+      if (controller.signal.aborted) return
+      setData(null)
+      setError(reason instanceof Error ? reason.message : 'Không thể tải kết quả KPI.')
+    }).finally(() => {
+      if (!controller.signal.aborted) setLoading(false)
+    })
+
+    return () => controller.abort()
+  }, [metadata, periodType, year, period, unitId, retryKey, today])
+
+  const results = data?.results ?? []
+  const selectedUnit = results.find(result => result.unionUnitId === selectedUnitId) ?? results[0]
+  const selectedGroup = selectedUnit?.groups.find(group => group.groupCode === selectedGroupCode)
+    ?? selectedUnit?.groups[0]
+  const selectedDetails = selectedUnit?.details.filter(detail => detail.groupCode === selectedGroup?.groupCode) ?? []
+  const selectedDetail = selectedDetails.find(detail => detail.kpiCode === selectedKpiCode) ?? selectedDetails[0]
+  const chosenPeriodLabel = data
+    ? `${kpiPeriodLabel(data.periodType, year, period)} · ${data.periodStart} – ${data.periodEnd}`
+    : kpiPeriodLabel(periodType, year, period)
+  const ownUnitLabel = [currentUnitCode, currentUnitName].filter(Boolean).join(' · ') || 'CĐCS của bạn'
+  const availablePeriodOptions = kpiPeriodOptions(periodType, year, today, metadata?.versions)
+
+  const prepareReload = () => {
+    setLoading(true)
+    setError('')
   }
-  const totalDistribution = Math.max(visibleRows.length, 1)
-  const excellentEnd = distribution.excellent / totalDistribution * 100
-  const goodEnd = excellentEnd + distribution.good / totalDistribution * 100
-  const passedEnd = goodEnd + distribution.passed / totalDistribution * 100
-  const donutStyle = {
-    '--kpi-donut': `conic-gradient(#1b9b70 0 ${excellentEnd}%, #2b65d8 ${excellentEnd}% ${goodEnd}%, #f0a038 ${goodEnd}% ${passedEnd}%, #de5a55 ${passedEnd}% 100%)`,
-  } as CSSProperties
-  const selectedScore = selectedRow ? periodScore(selectedRow, periodMode, quarter) : 0
-  const reachedCategories = selectedRow?.categories.filter(category => category.score >= category.target).length ?? 0
-  const periodLabel = periodMode === 'quarter' ? `Quý ${quarter}/${year}` : `Năm ${year}`
+
+  const onPeriodTypeChange = (nextType: KpiPeriodType) => {
+    if (nextType === periodType) return
+    const nextOptions = kpiPeriodOptions(nextType, year, today, metadata?.versions)
+    if (nextOptions.length === 0) return
+    prepareReload()
+    setPeriodType(nextType)
+    const preferredPeriod = defaultKpiPeriod(nextType, today)
+    setPeriod(nextOptions.some(option => option.value === preferredPeriod)
+      ? preferredPeriod
+      : (nextOptions.at(-1)?.value ?? 1))
+    setSelectedGroupCode(null)
+    setSelectedKpiCode(null)
+  }
 
   return <section className="page-section kpi-report-page">
     <div className="kpi-report-heading">
       <div>
         <div className="kpi-report-heading__meta">
           <span className="kpi-live-dot" />
-          <span>{isAdmin ? 'Trung tâm điều hành · Toàn hệ thống' : 'Báo cáo hiệu quả · CĐCS'}</span>
-          <b>Dữ liệu mô phỏng</b>
+          <span>{isAdmin ? 'Điều hành KPI toàn hệ thống' : 'Kết quả KPI công đoàn cơ sở'}</span>
         </div>
         <h1>Báo cáo KPI công đoàn</h1>
-        <p>Theo dõi mức độ hoàn thành mục tiêu theo quý và cả năm, từ toàn hệ thống đến từng công đoàn cơ sở.</p>
+        <p>Điểm được tính từ dữ liệu nghiệp vụ tại ngày chốt, có cảnh báo chất lượng và truy xuất đến bản ghi chứng minh.</p>
       </div>
-      <button className="button button--ghost kpi-print-button" onClick={() => window.print()}>
+      <button type="button" className="button button--ghost kpi-print-button" onClick={() => window.print()}>
         <span aria-hidden="true">↗</span> Xuất báo cáo
       </button>
     </div>
 
     <div className="kpi-control-bar">
-      <div className="kpi-period-switch" aria-label="Kiểu kỳ báo cáo">
-        <button className={periodMode === 'quarter' ? 'is-active' : ''} onClick={() => setPeriodMode('quarter')}>Theo quý</button>
-        <button className={periodMode === 'year' ? 'is-active' : ''} onClick={() => setPeriodMode('year')}>Theo năm</button>
+      <div className="kpi-period-switch" aria-label="Kiểu kỳ KPI">
+        {KPI_PERIOD_TYPES.map(option => <button
+          type="button"
+          aria-pressed={periodType === option.value}
+          className={periodType === option.value ? 'is-active' : ''}
+          disabled={metadata !== null && kpiPeriodOptions(option.value, year, today, metadata.versions).length === 0}
+          key={option.value}
+          onClick={() => onPeriodTypeChange(option.value)}
+        >{option.label}</button>)}
       </div>
       <label className="kpi-control-field">
-        <span>Năm báo cáo</span>
-        <select value={year} onChange={event => setYear(Number(event.target.value))}>
-          <option value={2026}>2026</option>
-          <option value={2025}>2025</option>
-          <option value={2024}>2024</option>
+        <span>Năm</span>
+        <select value={year} onChange={event => {
+          const nextYear = Number(event.target.value)
+          let nextType = periodType
+          let nextOptions = kpiPeriodOptions(nextType, nextYear, today, metadata?.versions)
+          if (nextOptions.length === 0 && metadata !== null) {
+            const fallback = KPI_PERIOD_TYPES
+              .map(option => ({
+                type: option.value,
+                options: kpiPeriodOptions(option.value, nextYear, today, metadata.versions),
+              }))
+              .find(candidate => candidate.options.length > 0)
+            if (!fallback) return
+            nextType = fallback.type
+            nextOptions = fallback.options
+          }
+          prepareReload()
+          setYear(nextYear)
+          setPeriodType(nextType)
+          setPeriod(nextOptions.some(option => option.value === period)
+            ? period
+            : (nextOptions.at(-1)?.value ?? 1))
+        }}>
+          {kpiYearOptions(today, metadata?.versions).map(option => <option key={option} value={option}>{option}</option>)}
         </select>
       </label>
-      {periodMode === 'quarter' && <div className="kpi-quarter-picker" aria-label="Chọn quý">
-        {[1, 2, 3, 4].map(value => <button
-          className={quarter === value ? 'is-active' : ''}
-          key={value}
-          onClick={() => setQuarter(value)}
-        >Q{value}</button>)}
-      </div>}
+      {periodType !== 'YEAR' && <label className="kpi-control-field kpi-control-field--period">
+        <span>Kỳ</span>
+        <select value={period} onChange={event => {
+          prepareReload()
+          setPeriod(Number(event.target.value))
+        }}>
+          {availablePeriodOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+      </label>}
       <label className="kpi-control-field kpi-control-field--unit">
-        <span>Phạm vi theo dõi</span>
+        <span>Phạm vi</span>
         {isAdmin
           ? <select value={unitId} onChange={event => {
+              prepareReload()
               setUnitId(event.target.value)
               setSelectedUnitId(event.target.value ? Number(event.target.value) : null)
+              setSelectedGroupCode(null)
+              setSelectedKpiCode(null)
             }}>
               <option value="">Tất cả công đoàn cơ sở</option>
-              {roleScopedUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>)}
+              {units.map(unit => <option key={unit.id} value={unit.id}>{unit.code} · {unit.name}</option>)}
             </select>
-          : <strong>{currentUnitName ?? roleScopedUnits[0]?.name ?? 'CĐCS của bạn'}</strong>}
+          : <strong>{ownUnitLabel}</strong>}
       </label>
       <div className="kpi-control-bar__stamp">
         <span>Kỳ đang xem</span>
-        <strong>{periodLabel}</strong>
+        <strong>{chosenPeriodLabel}</strong>
       </div>
     </div>
 
-    <div className="kpi-summary-grid">
-      <article className="kpi-summary-card kpi-summary-card--primary">
-        <div className="kpi-summary-card__icon">KPI</div>
-        <div><span>Điểm KPI bình quân</span><strong>{summary.average.toFixed(1)}</strong><small>/ 100 điểm</small></div>
-        <b className={summary.change >= 0 ? 'is-positive' : 'is-negative'}>{formatChange(summary.change)} điểm</b>
-      </article>
-      <article className="kpi-summary-card">
-        <div className="kpi-summary-card__icon kpi-summary-card__icon--green">✓</div>
-        <div><span>Đơn vị đạt mục tiêu</span><strong>{summary.reached}<small>/{visibleRows.length}</small></strong><small>Từ 80 điểm trở lên</small></div>
-        <b>{visibleRows.length ? Math.round(summary.reached / visibleRows.length * 100) : 0}%</b>
-      </article>
-      <article className="kpi-summary-card">
-        <div className="kpi-summary-card__icon kpi-summary-card__icon--orange">★</div>
-        <div><span>Đơn vị xuất sắc</span><strong>{summary.excellent}</strong><small>Từ 90 điểm trở lên</small></div>
-        <b>{summary.leader?.unitCode ?? '—'}</b>
-      </article>
-      <article className="kpi-summary-card">
-        <div className="kpi-summary-card__icon kpi-summary-card__icon--red">!</div>
-        <div><span>Cần theo dõi</span><strong>{summary.attention}</strong><small>Chưa đạt mốc 80 điểm</small></div>
-        <b>{summary.attention ? 'Cần hỗ trợ' : 'Ổn định'}</b>
-      </article>
-    </div>
+    {loading && <div className="loading-panel" role="status">Đang nạp và tính KPI từ dữ liệu nghiệp vụ…</div>}
 
-    <div className="kpi-insight-grid">
-      <article className="panel kpi-trend-panel">
-        <header className="kpi-panel-heading">
-          <div><span>Xu hướng toàn hệ thống</span><strong>Điểm KPI bình quân theo quý</strong></div>
-          <div className="kpi-panel-legend"><i /> Năm {year}</div>
-        </header>
-        <div className="kpi-chart">
-          <div className="kpi-chart__scale"><span>100</span><span>80</span><span>60</span></div>
-          <svg viewBox="0 0 640 190" role="img" aria-label={`Xu hướng điểm KPI năm ${year}`} preserveAspectRatio="none">
-            <defs>
-              <linearGradient id="kpiArea" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#2864d7" stopOpacity=".2" />
-                <stop offset="100%" stopColor="#2864d7" stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            <line x1="50" y1="42" x2="602" y2="42" />
-            <line x1="50" y1="102" x2="602" y2="102" />
-            <line x1="50" y1="162" x2="602" y2="162" />
-            <polygon points={`50,162 ${trendPoints} 602,162`} fill="url(#kpiArea)" stroke="none" />
-            <polyline points={trendPoints} className="kpi-chart__line" />
-            {trendValues.map((value, index) => {
-              const x = 50 + index * 184
-              const y = 162 - (value - 60) * 3
-              const active = periodMode === 'quarter' && quarter === index + 1
-              return <g key={index} className={active ? 'is-active' : ''}>
-                <circle cx={x} cy={y} r={active ? 7 : 5} />
-                <text x={x} y={y - 14}>{value.toFixed(1)}</text>
-                <text className="kpi-chart__quarter" x={x} y="185">Q{index + 1}</text>
-              </g>
-            })}
-          </svg>
-        </div>
-        <footer>
-          <span><i className="is-positive">↑</i> Tăng {Math.max(0, trendValues[3] - trendValues[0]).toFixed(1)} điểm so với đầu năm</span>
-          <small>Kỳ có dữ liệu cập nhật gần nhất: Q3/{year}</small>
-        </footer>
-      </article>
-
-      <article className="panel kpi-distribution-panel">
-        <header className="kpi-panel-heading">
-          <div><span>Cơ cấu xếp loại</span><strong>Phân bố kết quả {periodLabel}</strong></div>
-        </header>
-        <div className="kpi-donut-wrap">
-          <div className="kpi-donut" style={donutStyle}>
-            <div><strong>{visibleRows.length}</strong><span>đơn vị</span></div>
-          </div>
-          <div className="kpi-distribution-list">
-            <div><i className="is-excellent" /><span>Xuất sắc</span><strong>{distribution.excellent}</strong></div>
-            <div><i className="is-good" /><span>Tốt</span><strong>{distribution.good}</strong></div>
-            <div><i className="is-passed" /><span>Đạt</span><strong>{distribution.passed}</strong></div>
-            <div><i className="is-attention" /><span>Cần cải thiện</span><strong>{distribution.attention}</strong></div>
-          </div>
-        </div>
-      </article>
-    </div>
-
-    <article className="panel kpi-ranking-panel">
-      <header className="kpi-panel-heading">
-        <div>
-          <span>{isAdmin ? 'Theo dõi toàn hệ thống' : 'Kết quả công đoàn cơ sở'}</span>
-          <strong>{isAdmin ? 'Xếp hạng KPI theo đơn vị' : `Chi tiết ${currentUnitName ?? selectedRow?.unitName ?? ''}`}</strong>
-        </div>
-        <small>Chọn một đơn vị để xem chi tiết nhóm chỉ tiêu</small>
-      </header>
-      <div className="table-wrap">
-        <table className="kpi-ranking-table">
-          <thead><tr><th>Hạng</th><th>Công đoàn cơ sở</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th><th>Điểm {periodMode === 'quarter' ? `Q${quarter}` : 'năm'}</th><th>Xếp loại</th><th>Tiến độ báo cáo</th></tr></thead>
-          <tbody>{rankedRows.map((row, index) => {
-            const score = periodScore(row, periodMode, quarter)
-            const previous = periodMode === 'quarter'
-              ? row.quarterlyScores[Math.max(0, quarter - 2)]
-              : average(row.quarterlyScores) - 3
-            return <tr className={selectedRow?.unitId === row.unitId ? 'is-selected' : ''} key={row.unitId}>
-              <td><span className={`kpi-rank kpi-rank--${Math.min(index + 1, 4)}`}>{index + 1}</span></td>
-              <td><button className="kpi-unit-link" onClick={() => setSelectedUnitId(row.unitId)}><b>{row.unitCode}</b><span>{row.unitName}</span><small>{row.memberCount} đoàn viên</small></button></td>
-              {row.quarterlyScores.map((quarterScore, quarterIndex) => <td key={quarterIndex}><span className={quarter === quarterIndex + 1 && periodMode === 'quarter' ? 'kpi-quarter-score is-current' : 'kpi-quarter-score'}>{quarterScore}</span></td>)}
-              <td><div className="kpi-table-score"><strong>{score}</strong><span className={score - previous >= 0 ? 'is-positive' : 'is-negative'}>{score - previous >= 0 ? '↑' : '↓'} {Math.abs(score - previous).toFixed(1)}</span></div></td>
-              <td><span className={`kpi-rating kpi-rating--${ratingTone(score)}`}>{ratingFor(score)}</span></td>
-              <td><div className="kpi-report-progress"><div><i style={{ width: `${row.reportProgress}%` }} /></div><span>{row.reportProgress}%</span></div></td>
-            </tr>
-          })}</tbody>
-        </table>
-      </div>
-    </article>
-
-    {selectedRow && <div className="kpi-detail-grid">
-      <article className="panel kpi-category-panel">
-        <header className="kpi-panel-heading">
-          <div><span>{selectedRow.unitCode} · {periodLabel}</span><strong>Hiệu quả theo nhóm chỉ tiêu</strong></div>
-          <div className={`kpi-detail-score kpi-detail-score--${ratingTone(selectedScore)}`}><strong>{selectedScore}</strong><span>{ratingFor(selectedScore)}</span></div>
-        </header>
-        <div className="kpi-category-list">{selectedRow.categories.map(category => <div className="kpi-category-row" key={category.code}>
-          <div className="kpi-category-row__heading"><div><strong>{category.label}</strong><span>{category.description}</span></div><div><b>{category.score}</b><small>/100</small></div></div>
-          <div className="kpi-category-row__track" role="progressbar" aria-label={category.label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={category.score}>
-            <i className={category.score >= category.target ? 'is-met' : 'is-missed'} style={{ width: `${category.score}%` }} />
-            <em style={{ left: `${category.target}%` }} />
-          </div>
-          <div className="kpi-category-row__meta"><span>Mục tiêu {category.target}</span><b className={category.change >= 0 ? 'is-positive' : 'is-negative'}>{category.change >= 0 ? '↑' : '↓'} {Math.abs(category.change)} điểm</b></div>
-        </div>)}</div>
-      </article>
-
-      <aside className="panel kpi-followup-panel">
-        <header className="kpi-panel-heading"><div><span>Gợi ý điều hành</span><strong>Ưu tiên kỳ tiếp theo</strong></div></header>
-        <div className="kpi-goal-ring" style={{ '--goal-progress': `${reachedCategories / selectedRow.categories.length * 360}deg` } as CSSProperties}>
-          <div><strong>{reachedCategories}/{selectedRow.categories.length}</strong><span>nhóm đạt mục tiêu</span></div>
-        </div>
-        <div className="kpi-followup-list">{[...selectedRow.categories]
-          .sort((left, right) => (left.score - left.target) - (right.score - right.target))
-          .slice(0, 3)
-          .map((category, index) => <div key={category.code}><span>{index + 1}</span><div><strong>{category.label}</strong><small>{category.score >= category.target ? 'Duy trì chất lượng và bổ sung minh chứng' : `Còn thiếu ${category.target - category.score} điểm so với mục tiêu`}</small></div></div>)}</div>
-        <footer><span>Cập nhật gần nhất</span><strong>{selectedRow.updatedAt}</strong></footer>
-      </aside>
+    {!loading && error && <div className="kpi-load-error" role="alert">
+      <div><strong>Không thể tải kết quả KPI</strong><span>{error}</span></div>
+      <button type="button" className="button button--primary" onClick={() => {
+        prepareReload()
+        setRetryKey(value => value + 1)
+      }}>Thử lại</button>
     </div>}
+
+    {!loading && !error && data && <>
+      <div className="kpi-run-meta">
+        <span>Phiên bản <strong>{data.versionId}</strong></span>
+        <span>Chốt lúc <strong>{formatTimestamp(data.cutoffAt)}</strong></span>
+        <span>Tổng hợp lúc <strong>{formatTimestamp(data.generatedAt)}</strong></span>
+      </div>
+
+      <div className="kpi-summary-grid">
+        <article className="kpi-summary-card kpi-summary-card--primary">
+          <div className="kpi-summary-card__icon">KPI</div>
+          <div><span>Điểm bình quân</span><strong>{formatKpiNumber(data.summary.averageScore)}</strong><small>/ 100 điểm</small></div>
+        </article>
+        <article className="kpi-summary-card">
+          <div className="kpi-summary-card__icon kpi-summary-card__icon--green">✓</div>
+          <div><span>Kết quả chính thức</span><strong>{data.summary.finalUnitCount}</strong><small>đơn vị được xếp hạng</small></div>
+        </article>
+        <article className="kpi-summary-card">
+          <div className="kpi-summary-card__icon kpi-summary-card__icon--orange">…</div>
+          <div><span>Kết quả tạm tính</span><strong>{data.summary.provisionalUnitCount}</strong><small>chưa vào bảng hạng</small></div>
+        </article>
+        <article className="kpi-summary-card">
+          <div className="kpi-summary-card__icon kpi-summary-card__icon--green">★</div>
+          <div><span>Xuất sắc chính thức</span><strong>{data.summary.excellentCount}</strong><small>chỉ tính kết quả FINAL</small></div>
+        </article>
+        <article className="kpi-summary-card">
+          <div className="kpi-summary-card__icon kpi-summary-card__icon--red">!</div>
+          <div><span>Cần theo dõi</span><strong>{data.summary.attentionCount}</strong><small>cần xử lý cảnh báo</small></div>
+        </article>
+      </div>
+
+      {results.length === 0
+        ? <div className="kpi-empty-state">
+            <strong>Chưa có kết quả KPI cho kỳ này</strong>
+            <span>Hãy kiểm tra dữ liệu nguồn, ngày chốt hoặc phạm vi CĐCS đã chọn.</span>
+          </div>
+        : <>
+          <article className="panel kpi-ranking-panel">
+            <header className="kpi-panel-heading">
+              <div>
+                <span>{isAdmin ? 'Cùng kỳ · cùng phiên bản' : 'Kết quả của đơn vị'}</span>
+                <strong>{isAdmin ? 'Kết quả KPI cùng kỳ' : ownUnitLabel}</strong>
+              </div>
+              <small>Chỉ kết quả FINAL mới có hạng; kết quả khác là dự báo</small>
+            </header>
+            <div className="table-wrap">
+              <table className="kpi-ranking-table">
+                <thead><tr><th>Hạng</th><th>Công đoàn cơ sở</th><th>Đoàn viên</th><th>Chất lượng dữ liệu</th><th>Điểm gốc</th><th>Thưởng</th><th>Phạt</th><th>Điểm hiện tại</th><th>Xếp loại</th><th>Trạng thái</th><th>Báo cáo đúng hạn</th></tr></thead>
+                <tbody>{results.map(result => <tr
+                  className={`${selectedUnit?.unionUnitId === result.unionUnitId ? 'is-selected' : ''}${result.runStatus !== 'FINAL' ? ' is-provisional' : ''}`}
+                  key={result.unionUnitId}
+                >
+                  <td>{result.rank === null
+                    ? <span className="kpi-rank kpi-rank--empty" title="Chưa được xếp hạng">—</span>
+                    : <span className={`kpi-rank kpi-rank--${Math.min(result.rank, 4)}`}>{result.rank}</span>}</td>
+                  <td><button type="button" aria-pressed={selectedUnit?.unionUnitId === result.unionUnitId} className="kpi-unit-link" onClick={() => selectUnit(result, setSelectedUnitId, setSelectedGroupCode, setSelectedKpiCode)}><b>{result.unionUnitCode}</b><span>{result.unionUnitName}</span><small>{result.activeMemberCount === null ? 'Chưa có snapshot đoàn viên của kỳ' : `${formatMemberCount(result.activeMemberCount)} đoàn viên đang hoạt động`}</small></button></td>
+                  <td>{formatMemberCount(result.activeMemberCount)}</td>
+                  <td><strong>{formatKpiRate(result.dataQualityRate)}</strong></td>
+                  <td>{formatKpiNumber(result.baseScore)}</td>
+                  <td className="is-positive">+{formatKpiNumber(result.bonusPoints)}</td>
+                  <td className="is-negative">−{formatKpiNumber(result.penaltyPoints)}</td>
+                  <td><strong className="kpi-final-score">{formatKpiNumber(result.finalScore)}</strong></td>
+                  <td><span className={`kpi-rating kpi-rating--${classificationTone(result.finalClassification)}`}>{result.runStatus === 'FINAL' ? result.finalClassification : `Dự báo · ${result.finalClassification}`}</span>{result.rawClassification !== result.finalClassification && <small className="kpi-raw-rating">Điểm gốc: {result.rawClassification}</small>}</td>
+                  <td><span className={`kpi-run-status kpi-run-status--${result.runStatus.toLowerCase()}`}>{kpiStatusLabel(result.runStatus)}</span></td>
+                  <td>{formatKpiRate(result.reportOnTimeRate)}</td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+          </article>
+
+          {selectedUnit && <>
+            <article className="panel kpi-group-panel">
+              <header className="kpi-panel-heading">
+                <div><span>{selectedUnit.unionUnitCode} · {chosenPeriodLabel}</span><strong>Điểm 7 nhóm KPI</strong></div>
+                <div className={`kpi-detail-score kpi-detail-score--${classificationTone(selectedUnit.finalClassification)}`}><strong>{formatKpiNumber(selectedUnit.finalScore)}</strong><span>{selectedUnit.runStatus === 'FINAL' ? selectedUnit.finalClassification : `Dự báo · ${selectedUnit.finalClassification}`}</span></div>
+              </header>
+              <div className="kpi-group-grid">{selectedUnit.groups.map(group => <button
+                type="button"
+                aria-pressed={selectedGroup?.groupCode === group.groupCode}
+                className={`kpi-group-card${selectedGroup?.groupCode === group.groupCode ? ' is-selected' : ''}`}
+                key={group.groupCode}
+                onClick={() => {
+                  setSelectedGroupCode(group.groupCode)
+                  setSelectedKpiCode(null)
+                }}
+              >
+                <div className="kpi-group-card__heading"><b>{group.groupCode}</b><span>{kpiStatusLabel(group.status)}</span></div>
+                <strong>{group.score === null ? 'NA' : formatKpiNumber(group.score)}</strong>
+                <small>{group.name}</small>
+                <div className="kpi-group-progress" role="progressbar" aria-label={group.name} aria-valuemin={0} aria-valuemax={100} aria-valuenow={group.score ?? undefined} aria-valuetext={group.score === null ? 'Không phát sinh' : `${formatKpiNumber(group.score)} trên 100`}>
+                  <i style={{ width: visualPercent(group.score) }} />
+                </div>
+                <span>{formatKpiNumber(group.earnedPoints)} điểm · trọng số {formatKpiNumber(group.eligibleWeight)}/{formatKpiNumber(group.configuredWeight)}</span>
+              </button>)}</div>
+            </article>
+
+            <div className="kpi-detail-grid">
+              <article className="panel kpi-category-panel">
+                <header className="kpi-panel-heading">
+                  <div><span>{selectedGroup?.groupCode ?? 'KPI'}</span><strong>{selectedGroup?.name ?? 'Chi tiết chỉ tiêu'}</strong></div>
+                  <small>Chọn KPI để truy xuất dữ liệu nguồn</small>
+                </header>
+                <div className="kpi-detail-workspace">
+                  <div className="kpi-detail-list">{selectedDetails.length === 0
+                    ? <div className="kpi-evidence-empty">Nhóm này chưa có KPI chi tiết.</div>
+                    : selectedDetails.map(detail => <button
+                        type="button"
+                        aria-pressed={selectedDetail?.kpiCode === detail.kpiCode}
+                        className={`kpi-detail-row${selectedDetail?.kpiCode === detail.kpiCode ? ' is-selected' : ''}`}
+                        key={detail.kpiCode}
+                        onClick={() => setSelectedKpiCode(detail.kpiCode)}
+                      >
+                        <div><b>{detail.kpiCode}</b><span>{detail.name}</span></div>
+                        <div><strong>{formatKpiNumber(detail.earnedPoints)}</strong><small>/ {formatKpiNumber(detail.eligibleWeight)} điểm</small></div>
+                        <span className={`kpi-status kpi-status--${detail.resultStatus.toLowerCase()}`}>{kpiStatusLabel(detail.resultStatus)}</span>
+                      </button>)}</div>
+                  <KpiEvidencePanel key={selectedDetail?.resultId ?? selectedDetail?.kpiCode ?? 'empty'} detail={selectedDetail} />
+                </div>
+              </article>
+
+              <aside className="panel kpi-followup-panel">
+                <header className="kpi-panel-heading"><div><span>Kiểm soát chất lượng</span><strong>Cảnh báo & hành động</strong></div><small>{selectedUnit.warnings.length} cảnh báo</small></header>
+                {selectedUnit.adjustments.length > 0 && <section className="kpi-adjustment-audit" aria-label="Nhật ký điều chỉnh KPI đã duyệt">
+                  <div className="kpi-adjustment-audit__heading"><strong>Nhật ký điều chỉnh đã duyệt</strong><span>{selectedUnit.adjustments.length} mục</span></div>
+                  {selectedUnit.adjustments.map(adjustment => <div className="kpi-adjustment-audit__item" key={adjustment.adjustmentId}>
+                    <div><b>{adjustment.adjustmentType === 'BONUS' ? 'Điểm thưởng' : `Điểm phạt ${adjustment.penaltyCode ?? ''}`}</b><strong>{adjustment.adjustmentType === 'BONUS' ? '+' : '−'}{formatKpiNumber(adjustment.points)}</strong></div>
+                    <p>{adjustment.redacted ? 'Chi tiết lý do được ẩn theo quyền truy cập.' : adjustment.reason}</p>
+                    {adjustment.adjustmentType === 'BONUS' && <small>Hiệu quả: {adjustment.effectivenessVerified ? 'đã xác minh' : 'chưa xác minh'} · Không trùng KPI: {adjustment.nonDuplicateVerified ? 'đã xác minh' : 'chưa xác minh'}</small>}
+                    {!adjustment.redacted && adjustment.evidenceModule && <small>Minh chứng: {adjustment.evidenceModule} · {adjustment.evidenceRecordId}</small>}
+                    <small>Phê duyệt lúc {formatTimestamp(adjustment.approvedAt)}</small>
+                    {!adjustment.redacted && <small>Đề nghị: {adjustment.requestedBy} · Duyệt: {adjustment.approvedBy}</small>}
+                  </div>)}
+                </section>}
+                <div className="kpi-warning-list">{selectedUnit.warnings.length === 0
+                  ? <div className="kpi-warning-empty"><strong>Không có cảnh báo</strong><span>Dữ liệu kỳ này không phát sinh cảnh báo cần xử lý.</span></div>
+                  : selectedUnit.warnings.map((warning, index) => <div className={`kpi-warning-item kpi-warning-item--${warning.severity.toLowerCase()}`} key={`${warning.code}-${warning.sourceRecordId ?? index}`}>
+                      <div><b>{warning.code}</b><span>{kpiStatusLabel(warning.severity)}</span></div>
+                      <strong>{warning.message}</strong>
+                      {(warning.sourceModule || warning.sourceRecordId) && <small>
+                        Kiểm tra {warning.sourceModule ?? 'hồ sơ nguồn'}{warning.sourceRecordId && !warning.redacted ? ` · ${warning.sourceRecordId}` : ''}
+                      </small>}
+                      {warning.recommendedAction && <small><b>Hành động:</b> {warning.recommendedAction}</small>}
+                      {warning.dueAt && <small>Hạn xử lý: {warning.dueAt}</small>}
+                    </div>)}</div>
+                <footer><span>Chất lượng dữ liệu</span><strong>{formatKpiRate(selectedUnit.dataQualityRate)}</strong></footer>
+              </aside>
+            </div>
+          </>}
+        </>}
+    </>}
   </section>
 }

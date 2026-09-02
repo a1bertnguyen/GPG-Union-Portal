@@ -10,9 +10,21 @@ import vn.gpg.unionportal.model.Member;
 /** Database-side equivalent of the member list filters that used to run in {@code CrudPage}. */
 public final class MemberSpecs {
     /** Columns the "dữ liệu còn thiếu" preset treats as required — mirrors {@code memberPresetFilters}. */
-    private static final String[] REQUIRED_FIELDS = {"jobTitle", "workplace", "joinDate", "email", "phone"};
+    private static final String[] REQUIRED_FIELDS = {
+            "company", "jobTitle", "workplace", "startWorkDate", "joinDate", "email", "phone"
+    };
 
     private MemberSpecs() {
+    }
+
+    /** Same required-profile contract used by the list preset and DATA01. */
+    public static boolean hasRequiredProfileFields(Member member) {
+        return present(member.getEmployeeCode()) && present(member.getFullName())
+                && member.getUnionUnit() != null && present(member.getCompany())
+                && present(member.getJobTitle()) && present(member.getWorkplace())
+                && member.getStartWorkDate() != null && member.getJoinDate() != null
+                && present(member.getEmail()) && present(member.getPhone())
+                && member.getMembershipStatus() != null && member.getEmploymentStatus() != null;
     }
 
     public static Specification<Member> filter(ListQuery query, Long scopedUnitId) {
@@ -60,5 +72,9 @@ public final class MemberSpecs {
                     Specs.enumLike(cb, root.get("employmentStatus"), EmploymentStatus.class, text),
                     Specs.unitLike(cb, root.get("unionUnit"), text));
         };
+    }
+
+    private static boolean present(String value) {
+        return value != null && !value.isBlank();
     }
 }

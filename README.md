@@ -1,94 +1,176 @@
-# GPG Union Portal — Giai đoạn 1–3
+# GPG Union Portal
 
-MVP số hóa dữ liệu công đoàn bằng Spring Boot, React và MySQL. Giai đoạn này tập trung vào dữ liệu nền, nhập liệu nghiệp vụ, dashboard và báo cáo tháng.
+Hệ thống nghiệp vụ nội bộ dành cho Công đoàn Tổng Công ty và các Công đoàn cơ sở (CĐCS) thuộc Hệ sinh thái Đối Tác Chân Thật – GPG. Ứng dụng quản lý dữ liệu công đoàn tại nơi phát sinh, tổng hợp báo cáo và tính KPI trực tiếp từ hồ sơ nghiệp vụ đã ghi nhận.
 
-## Phạm vi đã triển khai
+## Chức năng chính
 
-- CĐCS/BCH: thông tin đơn vị, nhiệm kỳ, quyết định và đầu mối.
-- Đoàn viên: hồ sơ, trạng thái tham gia, nơi làm việc, bộ lọc và nhập/xuất CSV tương thích Excel.
-- Chăm lo: loại chính sách, người thụ hưởng, số tiền, trạng thái và chứng từ.
-- Kiến nghị/vụ việc: mức độ, PIC, deadline, trạng thái, kết quả và lý do quá hạn.
-- Hoạt động: kế hoạch, ngân sách, chi phí, người tham dự và báo cáo sau chương trình.
-- Tài chính nội bộ: nhập phiếu thu/chi, kiểm tra chứng từ và tính tổng thu, tổng chi, số dư.
-- Báo cáo M01: tổng hợp dữ liệu tháng theo từng CĐCS hoặc toàn hệ thống và xuất CSV.
-- Dashboard: sáu màn hình độc lập cho điều hành, chăm lo, vụ việc, hoạt động, tài chính và tiếng nói NLĐ.
+- Hồ sơ CĐCS, Ban Chấp hành, nhiệm kỳ, quyết định và đầu mối.
+- Hồ sơ người lao động, đoàn viên, biến động và tài liệu liên quan.
+- Chính sách và hồ sơ chăm lo: hiếu, hỷ, sinh con, ốm đau, khó khăn, sinh nhật, tri ân và thăm hỏi.
+- Kiến nghị, phản ánh, phân công xử lý, SLA, kết quả và chứng từ.
+- Kế hoạch chương trình, ngân sách, người tham gia, báo cáo sau hoạt động và thư viện ảnh/tài liệu.
+- Thu, chi, tạm ứng, chứng từ và số liệu đối soát tài chính nội bộ.
+- Báo cáo định kỳ, dashboard điều hành, khảo sát và tiếng nói người lao động.
+- KPI CĐCS theo dữ liệu thật, có trạng thái chất lượng và bằng chứng nguồn.
+- Nhập/xuất Excel, tích hợp HR/tài chính bằng CSV và nhật ký lượt nhập.
+- Đăng nhập JWT, phân quyền theo vai trò và phạm vi CĐCS.
 
-## Giai đoạn 2 thử nghiệm
+> Hệ thống tài chính chỉ ghi nhận và tổng hợp dữ liệu nội bộ. Ứng dụng không kết nối ngân hàng, ví điện tử, cổng thanh toán hoặc tự thực hiện giao dịch tiền.
 
-- Tạo và đóng chiến dịch khảo sát nhanh theo từng CĐCS.
-- NLĐ gửi đánh giá 1–5, chọn nhóm nhu cầu và có thể phản hồi ẩn danh.
-- Dashboard Employee Voice tổng hợp tỷ lệ phản hồi, điểm kết nối, tỷ lệ kiến nghị có kết quả, điểm hữu ích hoạt động và top nhu cầu.
-- Cảnh báo tự động khi tỷ lệ phản hồi dưới 60%, điểm kết nối dưới 3,5, kiến nghị có phản hồi dưới 90% hoặc hoạt động có điểm hữu ích thấp.
+## KPI Công đoàn cơ sở
 
-## Giai đoạn 3 — tích hợp dữ liệu nội bộ
+Màn **Báo cáo KPI** gọi trực tiếp backend; không còn sinh điểm, xếp loại hoặc thứ hạng mô phỏng ở frontend. Một lần đánh giá hỗ trợ bốn loại kỳ:
 
-- Nhập HR Master bằng CSV, cập nhật theo mã nhân viên và mã CĐCS.
-- Nhập phiếu thu/chi kế toán bằng CSV, cập nhật theo mã phiếu.
-- Xuất CSV tài chính theo tháng/CĐCS để đối soát thủ công hoặc dùng làm tệp mẫu.
-- Lưu lịch sử từng lượt nhập: loại dữ liệu, tệp, người thực hiện, số dòng thành công/thất bại và chi tiết lỗi.
-- Chỉ `ADMIN` được dùng màn hình **Tích hợp dữ liệu**.
+- `MONTH`: tháng, `period` từ 1 đến 12.
+- `QUARTER`: quý, `period` từ 1 đến 4.
+- `HALF_YEAR`: 6 tháng, `period` là 1 hoặc 2.
+- `YEAR`: năm, `period` là 1.
 
-> Tài chính không kết nối ngân hàng, ví điện tử, cổng thanh toán hoặc dịch vụ chuyển tiền. Hệ thống chỉ lưu dữ liệu người dùng nhập và thực hiện phép tính nội bộ.
+Engine trả đủ 31 chỉ tiêu thuộc bảy nhóm:
 
-## Đăng nhập nội bộ và phân quyền
+| Nhóm | Nội dung | Trọng số chuẩn |
+|---|---|---:|
+| `GOV` | Tổ chức, hồ sơ và năng lực BCH | 15 |
+| `DATA` | Đoàn viên và chất lượng dữ liệu | 15 |
+| `REP` | Báo cáo, kế hoạch và tuân thủ kỳ | 15 |
+| `CARE` | Chăm lo, chính sách và quyền lợi NLĐ | 20 |
+| `GRV` | Kiến nghị, phản ánh và quan hệ lao động | 15 |
+| `ACT` | Hoạt động, chương trình và gắn kết | 10 |
+| `FIN` | Tài chính, ngân sách và chứng từ | 10 |
 
-Toàn bộ API nghiệp vụ được bảo vệ bằng JWT ký HMAC-SHA256. Mật khẩu admin được lưu dưới dạng BCrypt; JWT có thời hạn mặc định 8 giờ và frontend chỉ giữ token trong `sessionStorage`.
+Trọng số, mục tiêu, chiều đánh giá, quy tắc NA và mức phạt thuộc phiên bản cấu hình có ngày hiệu lực. Engine hiện chỉ áp dụng SLA nộp báo cáo khi phiên bản có quy tắc `REPORT_SUBMISSION`; SLA chăm lo, kiến nghị và cập nhật đoàn viên chưa được tính đầy đủ từ lịch làm việc cấu hình. Kết quả kỳ cũ phải tiếp tục gắn với phiên bản đã dùng, không bị thay đổi khi cấu hình mới có hiệu lực.
 
-Tài khoản khởi tạo dành cho local/dev:
+### Trạng thái chỉ tiêu
 
-- `ADMIN`: `admin` / `Admin@123!` — toàn quyền, xem toàn hệ thống, quản lý CĐCS, tài khoản và tích hợp dữ liệu.
-- `USER`: `user.vcs` / `User@123!` — vận hành đoàn viên, chăm lo, vụ việc, hoạt động, khảo sát, tài chính nội bộ và báo cáo trong CĐCS `VCS`.
+- `CALCULATED`: có đủ dữ liệu nguồn để tính tử số, mẫu số và điểm.
+- `NA`: không phát sinh hợp lệ, mẫu số bằng 0, KPI cho phép NA và có xác nhận đối soát độc lập.
+- `MISSING_DATA`: thiếu dữ liệu hoặc thiếu nguồn xác nhận; không tự động được điểm tối đa.
+- `FAILED_VALIDATION`: dữ liệu nguồn có lỗi làm chỉ tiêu không đủ điều kiện tính.
 
-Backend lấy phạm vi CĐCS trực tiếp từ claim `unitId` trong JWT. Tham số hoặc payload do USER gửi lên không thể dùng để xem hay thay đổi dữ liệu của đơn vị khác. Quản lý CĐCS, quản lý tài khoản, nhập CSV hàng loạt và tích hợp dữ liệu chỉ dành cho ADMIN.
+KPI bắt buộc không được chuyển thành NA. Điểm cơ sở phân bổ lại trọng số chỉ cho KPI thật sự NA; dữ liệu thiếu không được dùng để làm tăng điểm. Điểm cuối được giới hạn trong khoảng 0–100 sau thưởng và phạt. Cổng xếp loại có thể hạ mức xếp loại khi thiếu báo cáo bắt buộc, hồ sơ pháp lý/BCH chưa hoàn chỉnh, còn vụ việc nghiêm trọng quá hạn hoặc có vi phạm đã xác minh.
 
-ADMIN có màn hình **Tài khoản & phân quyền** để tạo tài khoản, gán USER vào CĐCS, đổi vai trò, khóa/mở tài khoản và đặt lại mật khẩu. Hệ thống không cho khóa/hạ quyền ADMIN đang đăng nhập hoặc làm mất ADMIN hoạt động cuối cùng.
+Thưởng/phạt thủ công chỉ được áp dụng khi bản ghi có đủ lý do, người đề nghị, người duyệt, thời điểm duyệt trước ngày chốt và tham chiếu bản ghi minh chứng. Riêng điểm thưởng còn bắt buộc có xác nhận hiệu quả và xác nhận không trùng KPI cơ bản. API trả kèm nhật ký điều chỉnh đã áp dụng; quản trị viên xem đầy đủ, còn người dùng thường thấy mã, số điểm, trạng thái xác minh và thời điểm nhưng phần lý do/danh tính/ID minh chứng được ẩn theo quyền truy cập. Giới hạn thưởng và mức trần phạt vẫn lấy từ phiên bản cấu hình.
 
-Trước khi triển khai, sao chép `.env.example` thành `.env`, thay `JWT_SECRET` bằng chuỗi ngẫu nhiên tối thiểu 32 byte và đặt mật khẩu mạnh cho cả hai tài khoản. Các biến `ADMIN_*`/`USER_*` chỉ tạo tài khoản ở lần khởi động đầu tiên khi username chưa tồn tại; chúng không tự đổi mật khẩu của tài khoản đã có. `USER_UNIT_CODE` phải trùng mã CĐCS đã tồn tại.
+Mỗi chi tiết KPI trả về:
 
-## Chạy nhanh bằng Docker
+- tử số, mẫu số, mục tiêu, trọng số hợp lệ và điểm đạt được;
+- giải thích bằng tiếng Việt;
+- danh sách module và ID bản ghi dùng trong tử số/mẫu số, kèm liên kết drill-down có kiểm tra phạm vi CĐCS;
+- cảnh báo dữ liệu thiếu, quá hạn hoặc không hợp lệ.
 
-Yêu cầu: Docker Desktop đang chạy.
+Nếu schema nghiệp vụ hiện chưa ghi nhận một sự kiện bắt buộc như thời điểm xác minh, xác nhận NLĐ, biên bản đối soát hay log phê duyệt, engine trả `MISSING_DATA`. Hệ thống không suy đoán từ trường khác và không tạo số liệu để lấp chỗ trống.
 
-Tạo cấu hình môi trường trước khi chạy thật:
+### Phạm vi triển khai hiện tại
+
+- `DATA01` được chấm trực tiếp từ hồ sơ đoàn viên đang hoạt động cho kỳ đang diễn ra. Kỳ lịch sử giữ `MISSING_DATA` và số đoàn viên hiển thị là chưa xác định khi chưa có snapshot HR/đoàn viên tại ngày chốt, thay vì dùng trạng thái hiện tại để chấm ngược. `REP01` tự hoạt động khi phiên bản được bổ sung lịch/SLA nộp báo cáo đã phê duyệt.
+- `GRV03` chưa cấp điểm từ trường `response_date`, vì workflow hiện gán trường này khi gửi duyệt chứ chưa chứng minh NLĐ đã nhận phản hồi; KPI này giữ `MISSING_DATA` cho đến khi có mốc phản hồi và đóng hồ sơ độc lập.
+- Các KPI còn thiếu snapshot HR, nhật ký phê duyệt, mốc xác minh/thanh toán/xác nhận NLĐ hoặc đối soát tài chính được trả về với `MISSING_DATA`; các trường gần giống không được dùng làm số liệu thay thế.
+- `dataQualityRate` hiện phản ánh tỷ lệ bản ghi đã nạp vượt qua kiểm tra nhất quán nội bộ. Đối soát độc lập với HR, kế toán và các kênh tiếp nhận vẫn cần được kết nối để trở thành tỷ lệ chất lượng liên nguồn hoàn chỉnh.
+- API `GET /api/kpi` là kết quả tạm tính trực tiếp tại thời điểm gọi. Schema đã dành chỗ cho run, detail, evidence và snapshot, nhưng luồng khóa `FINAL`, phê duyệt/mở lại và đọc lại snapshot chưa được công bố thành API; vì vậy kết quả hiện tại không được xem là bảng xếp hạng chính thức.
+- Xác nhận `NA` phải thuộc đúng CĐCS, kỳ và phiên bản KPI, đã đối soát bằng một nguồn độc lập khác module nghiệp vụ, có cả người xác nhận lẫn người phê duyệt. Khi chưa có xác nhận hợp lệ, mẫu số 0 vẫn là `MISSING_DATA`.
+- Các mã CĐCS từ migration minh họa vẫn được giữ làm danh mục/phạm vi tài khoản, nhưng hồ sơ pháp lý/BCH minh họa và toàn bộ khóa bản ghi mẫu đã được loại khỏi nguồn tính KPI.
+
+### API KPI
+
+```http
+GET /api/kpi/metadata
+GET /api/kpi?periodType=MONTH&year=2026&period=8
+GET /api/kpi?periodType=QUARTER&year=2026&period=3&unitId=1
+GET /api/kpi?periodType=HALF_YEAR&year=2026&period=2
+GET /api/kpi?periodType=YEAR&year=2026&period=1
+GET /api/kpi/evidence/{resourceType}/{recordId}
+```
+
+Endpoint metadata cung cấp các phiên bản đã phê duyệt và khoảng ngày hiệu lực. Frontend chỉ cho chọn năm không vượt quá năm hiện tại và có giao với ít nhất một khoảng hiệu lực; các năm nằm trong khoảng trống giữa hai phiên bản không được tự động thêm. Bộ chọn kỳ ẩn kỳ chưa bắt đầu và chỉ nhận kỳ được một phiên bản duy nhất bao phủ toàn bộ ngày bắt đầu–kết thúc. Tài khoản `USER` luôn bị giới hạn về CĐCS trong JWT; truyền `unitId` của đơn vị khác không mở rộng phạm vi. `ADMIN` có thể xem một CĐCS hoặc toàn hệ thống. Frontend dùng nguyên điểm, xếp loại, trạng thái và thứ hạng do engine trả về, chỉ định dạng số hiển thị đến hai chữ số thập phân.
+
+Drill-down chứng cứ chỉ trả một danh sách trường được cho phép và metadata tệp; nội dung tệp tiếp tục đi qua endpoint tải xuống có xác thực. Hồ sơ chăm lo và kiến nghị được ẩn khỏi tài khoản `USER`; `ADMIN` mới nhận liên kết và xem chi tiết nhạy cảm. Xác nhận NA cũng có chứng cứ riêng thể hiện nguồn đối soát, người xác nhận và người duyệt.
+
+## Mô hình sử dụng
+
+- **Đầu mối tuyến đầu:** tạo và cập nhật hồ sơ thuộc phạm vi được giao.
+- **BCH/Chủ tịch CĐCS:** quản trị dữ liệu đơn vị, theo dõi KPI tạm tính và gửi/xác nhận báo cáo.
+- **Công đoàn Tổng Công ty:** chuẩn hóa danh mục, kiểm tra, yêu cầu bổ sung và tổng hợp toàn hệ thống.
+- **Ban Chăm sóc NLĐ:** giám sát hồ sơ chăm lo, kiến nghị và SLA.
+- **Kế toán Công đoàn:** kiểm tra giao dịch, chứng từ và đối soát.
+- **Ban Lãnh đạo/người phê duyệt:** xem dashboard và phê duyệt theo thẩm quyền.
+- **Kiểm toán hệ thống:** xem dữ liệu và nhật ký, không sửa nghiệp vụ.
+
+Ở phiên bản hiện tại, lớp xác thực kỹ thuật dùng hai quyền `ADMIN` và `USER`; các vai trò nghiệp vụ chi tiết ở trên được ánh xạ theo phạm vi công việc. Khi tách thành các quyền riêng, phải giữ nguyên nguyên tắc giới hạn CĐCS và quyền xem hồ sơ nhạy cảm.
+
+Nội dung kiến nghị, dữ liệu sức khỏe và thông tin cá nhân không được đưa lên bảng xếp hạng. API vẫn áp dụng phạm vi đơn vị và quyền truy cập khi cung cấp bằng chứng nguồn.
+
+## Kiến trúc
+
+```text
+frontend/   React 19 + TypeScript + Vite
+backend/    Java 21 + Spring Boot + Spring Security + Spring Data JPA
+database    MySQL 8.4 + Flyway migrations
+```
+
+Backend được tổ chức theo các lớp:
+
+- `controller`: REST API và kiểm tra tham số request.
+- `service`: nghiệp vụ, phân quyền, KPI và transaction.
+- `repository`: truy cập dữ liệu bằng Spring Data JPA.
+- `model`: entity và enum miền nghiệp vụ.
+- `dto`: hợp đồng request/response.
+- `spec`: bộ lọc và truy vấn tổng hợp dùng chung.
+- `security`, `config`: JWT, CORS, rate limit và cấu hình ứng dụng.
+- `realtime`: sự kiện thay đổi dữ liệu qua Server-Sent Events.
+
+## Chạy bằng Docker
+
+Yêu cầu: Docker Desktop đang hoạt động.
 
 ```powershell
 Copy-Item .env.example .env
-# Chỉnh JWT_SECRET và ADMIN_PASSWORD trong .env
 ```
+
+Trước khi chạy ngoài máy cá nhân, hãy thay ít nhất `JWT_SECRET`, `ADMIN_PASSWORD` và `USER_PASSWORD` trong `.env`.
 
 ```powershell
 docker compose up --build
 ```
 
-Sau khi các container healthy:
+Các địa chỉ mặc định:
 
-- Giao diện: http://localhost:3637
-- Backend API: http://localhost:3638/api
-- Health check: http://localhost:3638/actuator/health
-- MySQL: localhost:3306, database `union_portal`
+| Dịch vụ | Địa chỉ |
+|---|---|
+| Giao diện | http://localhost:3637 |
+| Backend API | http://localhost:3638/api |
+| Health check | http://localhost:3638/actuator/health |
+| MySQL từ máy host | `localhost:3307`, database `union_portal` |
 
-Dừng hệ thống:
+Dừng container nhưng giữ dữ liệu:
 
 ```powershell
 docker compose down
 ```
 
-Xóa cả dữ liệu MySQL để khởi tạo lại dữ liệu mẫu:
+Xóa volume MySQL và khởi tạo lại toàn bộ dữ liệu:
 
 ```powershell
 docker compose down -v
 ```
 
-## Chạy cho phát triển
+Lệnh cuối là thao tác phá hủy dữ liệu local trong volume Docker.
 
-Backend cần MySQL đang chạy:
+## Chạy môi trường phát triển
+
+### Backend
+
+Yêu cầu Java 21 và một MySQL có database `union_portal`.
 
 ```powershell
 cd backend
 .\mvnw.cmd spring-boot:run
 ```
 
-Frontend:
+Có thể ghi đè kết nối bằng `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`; cổng mặc định là `3638`. Cấu hình đầy đủ nằm tại `backend/src/main/resources/application.properties`.
+
+### Frontend
+
+Yêu cầu phiên bản Node.js tương thích Vite 8.
 
 ```powershell
 cd frontend
@@ -96,53 +178,89 @@ npm install
 npm run dev
 ```
 
-## Kiến trúc backend
+Frontend dùng `VITE_API_URL`; khi không khai báo, đường dẫn API mặc định là `/api` và Vite proxy request sang backend trong môi trường phát triển.
 
-Backend được tổ chức theo mô hình MVC phân tầng dưới package `vn.gpg.unionportal`:
+## Tài khoản khởi tạo local
 
-- `controller`: khai báo REST endpoint, nhận/validate request và trả response.
-- `service`: xử lý nghiệp vụ, phân quyền theo CĐCS và quản lý transaction.
-- `repository`: truy cập dữ liệu qua Spring Data JPA.
-- `model`: các JPA entity và enum miền nghiệp vụ.
-- `dto`: request/response model của API.
-- `mapper`: chuyển DTO sang entity.
-- `exception`: exception nghiệp vụ và bộ xử lý lỗi dùng chung.
-- `config`: bảo mật, CORS và khởi tạo tài khoản.
-- `security`: rate limiter và các thành phần bảo vệ request.
-- `realtime`: domain event dùng cho luồng SSE.
+Khi username chưa tồn tại, backend có thể tạo tài khoản bootstrap từ biến môi trường:
 
-Cấu hình Spring Boot nằm tại `backend/src/main/resources/application.properties`; cấu hình test nằm tại `backend/src/test/resources/application.properties`. Có thể ghi đè kết nối database bằng `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` và các thiết lập khác bằng những biến môi trường được khai báo trong file này.
+- `ADMIN`: mặc định `admin` / `Admin@123!`.
+- `USER`: mặc định `user.vcs` / `User@123!` khi `BOOTSTRAP_USER_ENABLED=true`; tài khoản được gắn với `USER_UNIT_CODE`.
 
-## Realtime và rate limit
+Các thông tin trên chỉ dành cho local/dev. Biến bootstrap không tự đổi mật khẩu của tài khoản đã tồn tại. Không sử dụng mật khẩu hoặc JWT secret mặc định trên môi trường dùng chung.
 
-Client đã đăng nhập có thể mở luồng SSE bằng `GET /api/realtime/events` với JWT trong header `Authorization`. Kết nối nhận event `connected`, sau đó nhận event `change` khi dữ liệu nghiệp vụ được tạo, cập nhật, xóa, nhập CSV/Excel hoặc khi khảo sát có phản hồi mới. Event chỉ được phát sau khi transaction commit; tài khoản `USER` chỉ nhận dữ liệu thuộc CĐCS của mình, còn `ADMIN` nhận toàn hệ thống.
+## Bảo mật và realtime
+
+- API nghiệp vụ dùng JWT HMAC-SHA256; mật khẩu được băm BCrypt.
+- Token frontend nằm trong `localStorage` để dùng chung giữa các tab và có thời hạn cấu hình được.
+- Backend lấy phạm vi CĐCS của `USER` từ claim `unitId`, không tin phạm vi do client tự gửi.
+- Rate limiter áp dụng riêng cho API, đăng nhập và kết nối SSE; response quá hạn trả `429` cùng `Retry-After`.
+- Client đã đăng nhập nhận sự kiện thay đổi qua `GET /api/realtime/events`.
 
 ```powershell
 curl.exe -N -H "Authorization: Bearer <access-token>" http://localhost:3638/api/realtime/events
 ```
 
-Rate limiter dùng token bucket nguyên tử theo user đã đăng nhập hoặc IP đối với login. Mặc định mỗi cửa sổ 60 giây cho phép 300 API request, 15 lần login và 60 lần kết nối/reconnect SSE. Response luôn có `X-RateLimit-Limit`, `X-RateLimit-Remaining`; khi vượt hạn mức trả `429 RATE_LIMIT_EXCEEDED` kèm `Retry-After`.
+Bộ đếm rate limit hiện nằm trong từng backend instance. Khi chạy nhiều replica cần chuyển trạng thái này sang kho dùng chung, ví dụ Redis, để có hạn mức thống nhất toàn cụm.
 
-Các hạn mức được cấu hình qua `RATE_LIMIT_*`; timeout và heartbeat SSE dùng `REALTIME_*`. Bộ đếm hiện lưu trong từng backend instance. Khi triển khai nhiều backend replica, cần chuyển bucket sang kho dùng chung như Redis với thao tác Lua nguyên tử để giữ cùng hạn mức trên toàn cụm.
+## Nhập và xuất dữ liệu
 
-## Nhập dữ liệu từ Excel
+Các module nghiệp vụ hỗ trợ mẫu `.xlsx` và nhập Excel theo từng dòng. Bản ghi trùng khóa nghiệp vụ được cập nhật thay vì tạo bản sao. Ngày sử dụng định dạng `yyyy-MM-dd`.
 
-Các màn hình có dữ liệu nhập liệu đều có nút tải **Mẫu Excel** và **Nhập Excel**: CĐCS, đoàn viên, chăm lo, vụ việc, hoạt động, tài chính, báo cáo tháng, khảo sát, phản hồi khảo sát và tài khoản. File `.xlsx` được kiểm tra theo từng dòng; bản ghi trùng khóa nghiệp vụ sẽ được cập nhật thay vì tạo thêm. Ngày dùng định dạng `yyyy-MM-dd`.
+Tích hợp dữ liệu nội bộ hỗ trợ:
 
-Riêng màn hình **Đoàn viên** vẫn hỗ trợ nhập/xuất CSV UTF-8 để tương thích với quy trình cũ.
+- HR Master bằng CSV, đối chiếu theo mã nhân viên và mã CĐCS.
+- Phiếu thu/chi bằng CSV, đối chiếu theo mã phiếu.
+- Nhật ký lượt nhập với số dòng thành công, thất bại và chi tiết lỗi.
 
-## Nhập tài chính nội bộ từ CSV
+Nhập hàng loạt và màn tích hợp chỉ dành cho `ADMIN`. KPI luôn đọc lại bản ghi nghiệp vụ; người dùng không nhập một bảng tổng điểm riêng.
 
-Vào **Tích hợp dữ liệu**, xuất CSV tài chính để lấy cấu trúc mẫu gồm `entryCode,unitCode,transactionDate,entryType,category,amount,description,documentNumber,documentStatus`. Ngày dùng `yyyy-MM-dd`; `entryType` nhận `INCOME`/`EXPENSE`; `documentStatus` nhận `COMPLETE`/`INCOMPLETE`/`NOT_REQUIRED`. Mã phiếu đã có sẽ được cập nhật.
+Các khóa dữ liệu minh họa từ migration cũ, gồm cả hồ sơ pháp lý/BCH của bốn CĐCS mẫu, được lưu trong danh mục loại trừ của KPI. Engine không dùng các bản ghi này để tính điểm; có thể vô hiệu hóa từng mục loại trừ khi dữ liệu đó đã được xác minh là dữ liệu nghiệp vụ thật.
 
-## Kiểm thử
+## Database và migration
+
+Flyway chạy các file tại `backend/src/main/resources/db/migration` theo thứ tự phiên bản. Không sửa migration đã chạy trên môi trường dùng chung; mọi thay đổi schema phải được thêm bằng migration mới. `spring.jpa.hibernate.ddl-auto=validate` giúp phát hiện entity không khớp schema khi khởi động.
+
+Khi thay đổi cấu hình KPI, hãy tạo phiên bản có ngày hiệu lực mới thay vì sửa dữ liệu cấu hình của kỳ đã khóa. Việc tính lại phải dùng cùng snapshot, cutoff và phiên bản nếu cần kết quả tất định.
+
+## Kiểm thử và kiểm tra chất lượng
+
+Backend:
 
 ```powershell
 cd backend
 .\mvnw.cmd test
+```
 
-cd ..\frontend
+Kiểm thử tập trung cho engine KPI và migration V21:
+
+```powershell
+.\mvnw.cmd "-Dtest=vn.gpg.unionportal.service.kpi.KpiScoringPolicyTests,vn.gpg.unionportal.service.kpi.GpgKpiEngineTests,vn.gpg.unionportal.service.kpi.KpiMigrationSmokeTests,vn.gpg.unionportal.service.kpi.KpiEvidenceServiceTests" test
+```
+
+Frontend:
+
+```powershell
+cd frontend
+npm test
+npm run lint
 npm run build
 ```
 
-Flyway tạo schema và nạp một bộ dữ liệu demo ở lần chạy đầu. Thay đổi cấu trúc database phải được thêm bằng migration mới trong `backend/src/main/resources/db/migration`.
+`npm run build` gồm TypeScript build, Vite production build và kiểm tra giới hạn bundle. Migration lịch sử `V16__add_activity_program_reports.sql` dùng lệnh `DELIMITER` riêng của MySQL nên bộ integration test khởi tạo toàn bộ schema bằng H2 hiện không chạy được qua V16; đây không phải lỗi của migration KPI V21. Trước khi phát hành cần chạy toàn bộ migration và integration test với MySQL 8.4 đúng phiên bản triển khai.
+
+## Cấu trúc repository
+
+```text
+backend/src/main/java/vn/gpg/unionportal/
+  config/ controller/ dto/ exception/ i18n/
+  mapper/ model/ realtime/ repository/ security/ service/ spec/
+backend/src/main/resources/db/migration/
+backend/src/test/
+frontend/src/
+frontend/tests/
+docker-compose.yml
+.env.example
+```
+
+Đặc tả nghiệp vụ KPI là nguồn quyết định cho công thức và quy tắc xếp loại. Khi schema nguồn chưa đủ để chứng minh một KPI, ưu tiên bổ sung sự kiện nghiệp vụ/audit trail trước; không tối ưu điểm bằng cách giảm tiếp nhận kiến nghị, trì hoãn ghi nhận quyền lợi hoặc tạo dữ liệu tổng hợp thủ công.
