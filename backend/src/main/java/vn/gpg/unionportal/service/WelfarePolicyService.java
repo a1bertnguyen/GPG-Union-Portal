@@ -56,7 +56,9 @@ public class WelfarePolicyService {
     @Transactional
     public WelfarePolicy create(WelfarePolicyRequest request) {
         requireAdmin();
-        var saved = repository.save(apply(new WelfarePolicy(), request));
+        var entity = apply(new WelfarePolicy(), request);
+        if (entity.getSequenceNumber() == null) entity.setSequenceNumber(nextSequenceNumber());
+        var saved = repository.save(entity);
         events.changed("welfare-policies", "CREATED", saved.getId(), null);
         return saved;
     }
@@ -92,7 +94,7 @@ public class WelfarePolicyService {
     WelfarePolicy apply(WelfarePolicy entity, WelfarePolicyRequest request) {
         entity.setCode(request.code().trim());
         entity.setSource(request.source());
-        entity.setSequenceNumber(request.sequenceNumber());
+        if (request.sequenceNumber() != null) entity.setSequenceNumber(request.sequenceNumber());
         entity.setWelfareType(request.welfareType());
         entity.setName(request.name().trim());
         entity.setSupportAmount(request.supportAmount());
@@ -100,6 +102,15 @@ public class WelfarePolicyService {
         entity.setProcessingWeeks(request.processingWeeks());
         entity.setActive(request.active());
         return entity;
+    }
+
+    private int nextSequenceNumber() {
+        return repository.findAll().stream()
+                .map(WelfarePolicy::getSequenceNumber)
+                .filter(value -> value != null)
+                .mapToInt(Integer::intValue)
+                .max()
+                .orElse(0) + 1;
     }
 
     private WelfarePolicy findById(Long id) {

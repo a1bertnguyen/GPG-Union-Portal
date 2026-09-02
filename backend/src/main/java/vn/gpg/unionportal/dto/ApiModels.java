@@ -131,7 +131,7 @@ public final class ApiModels {
     public record WelfarePolicyRequest(
             @NotBlank @Size(max = 40) String code,
             @NotNull WelfarePolicySource source,
-            @NotNull @Min(1) Integer sequenceNumber,
+            @Min(1) Integer sequenceNumber,
             @NotNull WelfareType welfareType,
             @NotBlank @Size(max = 180) String name,
             @NotNull @DecimalMin("0.00") BigDecimal supportAmount,
