@@ -63,7 +63,7 @@ export const welfareFields: FieldConfig[] = [
 export const welfarePolicyFields: FieldConfig[] = [
   { name: 'code', label: 'Mã chính sách', required: true, placeholder: 'VD: CD-01-01' },
   { name: 'source', label: 'Nguồn hỗ trợ', type: 'select', required: true, options: option('UNION', 'COMPANY'), defaultValue: 'UNION' },
-  { name: 'sequenceNumber', label: 'TT', type: 'number', min: '1', required: true, defaultValue: '1' },
+  { name: 'sequenceNumber', label: 'TT', type: 'number', min: '1', required: true, defaultValue: '1', hidden: true },
   { name: 'welfareType', label: 'Loại chăm lo', type: 'select', required: true, options: option('BIRTHDAY', 'FUNERAL', 'WEDDING', 'VISIT', 'CHILDBIRTH', 'HARDSHIP'), defaultValue: 'HARDSHIP' },
   { name: 'name', label: 'Nội dung chính sách', required: true, wide: true },
   { name: 'supportAmount', label: 'Mức hỗ trợ (VNĐ)', type: 'number', min: '0', step: '1000', required: true, defaultValue: '0' },
