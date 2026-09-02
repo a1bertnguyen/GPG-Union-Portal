@@ -155,6 +155,23 @@ public class WelfareService {
         return saved;
     }
 
+    /**
+     * The person assigned to the CĐCS completes the approved care after it has actually been
+     * delivered. Approval creates the finance entry; completion records the operational result.
+     */
+    @Transactional
+    public WelfareRecord complete(Long id) {
+        var entity = findById(id);
+        currentUser.requireUnitAccess(entity.getUnionUnit().getId());
+        if (entity.getStatus() != WorkStatus.IN_PROGRESS) {
+            throw new IllegalArgumentException("Chỉ có thể hoàn thành hồ sơ chăm lo đang xử lý");
+        }
+        entity.setStatus(WorkStatus.COMPLETED);
+        var saved = repository.save(entity);
+        events.changed("welfare", "COMPLETED", saved.getId(), saved.getUnionUnit().getId());
+        return saved;
+    }
+
     private WelfareRecord findById(Long id) {
         return repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy hồ sơ chăm lo với id=" + id));

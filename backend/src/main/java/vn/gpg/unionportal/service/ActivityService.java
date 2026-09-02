@@ -135,7 +135,7 @@ public class ActivityService {
         required(missing, request.employeeGroup(), "nhóm NLĐ");
         required(missing, request.actualContent(), "nội dung thực tế");
         required(missing, request.planDifference(), "khác biệt so với kế hoạch");
-        required(missing, request.quickFeedback(), "phản hồi");
+        required(missing, request.quickFeedback(), "báo cáo");
         required(missing, request.issues(), "vấn đề ghi nhận");
         required(missing, request.outputProposal(), "đề xuất");
         required(missing, request.communicationContent(), "nội dung truyền thông");

@@ -79,12 +79,12 @@ export default function HomeDashboardPage({ unitName, isAdmin, onNavigate }: Pro
     {error && <div className="alert alert--danger">{error}</div>}
     {summary.urgentEscalation.length > 0 && <button className="alert alert--danger case-escalation-alert case-escalation-alert--button" onClick={() => onNavigate('caseReports')}>
       <strong>Báo ngay CĐ GPG / Ban CSNLĐ</strong>
-      <span>{summary.urgentEscalation.length} vụ việc đang mở ảnh hưởng nhiều NLĐ hoặc có rủi ro cao. Không chờ báo cáo tháng.</span>
+      <span>{summary.urgentEscalation.length} kiến nghị đang mở ảnh hưởng nhiều NLĐ hoặc có rủi ro cao. Không chờ báo cáo tháng.</span>
     </button>}
     <div className="today-alert-grid">
       <button onClick={() => onNavigate('cases')}><span>Đến hạn 24h</span><strong>{summary.due24.length}</strong><small>Cần ưu tiên phản hồi</small></button>
       <button className="today-alert--danger" onClick={() => onNavigate('cases')}><span>Quá hạn</span><strong>{summary.overdue.length}</strong><small>Cần cập nhật lý do và ETA</small></button>
-      <button onClick={() => onNavigate('caseAnalytics')}><span>Vụ việc lặp lại</span><strong>{summary.repeated.length}</strong><small>Theo nhóm vấn đề</small></button>
+      <button onClick={() => onNavigate('caseAnalytics')}><span>Kiến nghị lặp lại</span><strong>{summary.repeated.length}</strong><small>Theo nhóm vấn đề</small></button>
       <button className="today-alert--orange" onClick={() => onNavigate('caseAnalytics')}><span>Ảnh hưởng nhiều NLĐ</span><strong>{summary.manyAffected.length}</strong><small>Từ 10 người trở lên</small></button>
     </div>
     <div className="dashboard-grid dashboard-grid--today">
@@ -100,7 +100,7 @@ export default function HomeDashboardPage({ unitName, isAdmin, onNavigate }: Pro
         <article className="panel data-card"><div className="panel__heading"><div><p className="eyebrow">Chăm lo</p><h2>Nhắc việc tự động</h2></div></div>
           <div className="today-mini-list"><button onClick={() => onNavigate('welfarePolicies')}><span>Sinh nhật trong 7 ngày</span><strong>{summary.birthday.length}</strong></button><button onClick={() => onNavigate('welfareDocuments')}><span>Hiếu hỷ thiếu hồ sơ</span><strong>{summary.incompleteCare.length}</strong></button><button onClick={() => onNavigate('welfareDocuments')}><span>Chưa quyết toán</span><strong>{summary.unsettled.length}</strong></button></div>
         </article>
-        <article className="panel data-card"><div className="panel__heading"><div><p className="eyebrow">Hoạt động & báo cáo</p><h2>Đang theo dõi</h2></div></div>
+        <article className="panel data-card"><div className="panel__heading"><div><p className="eyebrow">Chương trình & báo cáo</p><h2>Đang theo dõi</h2></div></div>
           <div className="today-mini-list"><button onClick={() => onNavigate('activities')}><span>Đang triển khai</span><strong>{summary.runningActivities.length}</strong></button><button onClick={() => onNavigate('activities')}><span>Follow-up đến hạn</span><strong>{summary.followUps.length}</strong></button><button onClick={() => onNavigate('reports')}><span>Báo cáo bản nháp</span><strong>{summary.pendingReports.length}</strong></button></div>
         </article>
       </aside>

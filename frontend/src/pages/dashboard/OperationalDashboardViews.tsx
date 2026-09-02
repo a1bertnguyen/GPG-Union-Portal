@@ -10,10 +10,10 @@ export function ExecutiveDashboard({ data, month }: { data: DashboardSummary; mo
       ['CĐCS đang theo dõi', data.unitCount, 'Phạm vi tài khoản hiện tại', 'blue'],
       ['Đoàn viên', data.unionMemberCount, `${data.activeMemberCount} NLĐ đang hoạt động`, 'teal'],
       ['Chăm lo hoàn tất', `${data.welfareCompletionRate}%`, 'Mục tiêu từ 95%', 'green'],
-      ['Vụ việc đang mở', data.openCaseCount, `${data.overdueCaseCount} vụ quá hạn`, 'orange'],
+      ['Kiến nghị đang mở', data.openCaseCount, `${data.overdueCaseCount} kiến nghị quá hạn`, 'orange'],
     ]} />
     <div className="task-strip" id="executive-priorities">
-      <div><strong>{data.overdueCaseCount}</strong><span>Vụ việc quá hạn</span><small>Cần PIC và ETA mới</small></div>
+      <div><strong>{data.overdueCaseCount}</strong><span>Kiến nghị quá hạn</span><small>Cần PIC và ETA mới</small></div>
       <div><strong>{data.pendingReportCount}</strong><span>Báo cáo chưa nộp</span><small>Kỳ {month}</small></div>
       <div><strong>{reportCompletion}%</strong><span>Đơn vị đã báo cáo</span><small>Mục tiêu 100%</small></div>
     </div>
@@ -22,7 +22,7 @@ export function ExecutiveDashboard({ data, month }: { data: DashboardSummary; mo
         <PanelHeading eyebrow="Tiến độ hệ thống" title="Mức độ hoàn thành" />
         <KpiLine label="Chăm lo hoàn tất" value={data.welfareCompletionRate} tone="green" />
         <KpiLine label="Đơn vị đã nộp báo cáo" value={reportCompletion} tone="blue" />
-        <KpiLine label="Vụ việc trong hạn" value={data.openCaseCount ? 100 - Math.round(data.overdueCaseCount * 100 / data.openCaseCount) : 100} tone="teal" />
+        <KpiLine label="Kiến nghị trong hạn" value={data.openCaseCount ? 100 - Math.round(data.overdueCaseCount * 100 / data.openCaseCount) : 100} tone="teal" />
       </article>
       <article className="panel">
         <PanelHeading eyebrow="Điểm cần quyết định" title="Ưu tiên điều hành" count={data.alerts.length} />
@@ -80,24 +80,24 @@ export function CasesDashboard({ records, month }: { records: BaseRecord[]; mont
   return <div id="dashboard-cases">
     {urgentEscalation.length > 0 && <div className="alert alert--danger case-escalation-alert">
       <strong>Báo ngay CĐ GPG / Ban CSNLĐ</strong>
-      <span>{urgentEscalation.length} vụ việc đang mở ảnh hưởng nhiều NLĐ hoặc có rủi ro cao. Không chờ báo cáo tháng.</span>
+      <span>{urgentEscalation.length} kiến nghị đang mở ảnh hưởng nhiều NLĐ hoặc có rủi ro cao. Không chờ báo cáo tháng.</span>
     </div>}
     <div className="today-alert-grid today-alert-grid--static">
       <article><span>Đến hạn 24h</span><strong>{due24.length}</strong><small>Cần ưu tiên phản hồi</small></article>
       <article className="today-alert--danger"><span>Quá hạn</span><strong>{overdue.length}</strong><small>Cần lý do và ETA mới</small></article>
-      <article><span>Vụ việc lặp lại</span><strong>{repeated.length}</strong><small>Theo nhóm vấn đề</small></article>
+      <article><span>Kiến nghị lặp lại</span><strong>{repeated.length}</strong><small>Theo nhóm vấn đề</small></article>
       <article className="today-alert--orange"><span>Ảnh hưởng nhiều NLĐ</span><strong>{manyAffected.length}</strong><small>Từ 10 người trở lên</small></article>
     </div>
     <MetricGrid cards={[
-      ['Vụ việc trong kỳ', monthly.length, `Tiếp nhận trong ${month}`, 'blue'],
+      ['Kiến nghị trong kỳ', monthly.length, `Tiếp nhận trong ${month}`, 'blue'],
       ['Đang mở trong kỳ', monthlyOpen.length, 'Chưa ở trạng thái đóng', 'teal'],
       ['Quá hạn', overdue.length, 'Cần cập nhật nguyên nhân và ETA', 'orange'],
       ['Có kết quả phản hồi', `${responseRate}%`, `${responded} hồ sơ có kết quả`, 'green'],
     ]} />
     <div className="dashboard-grid">
-      <article className="panel"><PanelHeading eyebrow="Phân loại rủi ro" title="Mức độ vụ việc" /><BreakdownList rows={grouped(monthly, 'severity')} /></article>
-      <article className="panel"><PanelHeading eyebrow="SLA & trách nhiệm" title="Tình trạng xử lý" /><KpiLine label="Có kết quả phản hồi" value={responseRate} tone="green" /><KpiLine label="Vụ việc trong hạn" value={open.length ? 100 - Math.round(overdue.length * 100 / open.length) : 100} tone="blue" /><KpiLine label="Không thuộc mức cao/nghiêm trọng" value={open.length ? 100 - Math.round(high.length * 100 / open.length) : 100} tone="teal" /></article>
+      <article className="panel"><PanelHeading eyebrow="Phân loại rủi ro" title="Mức độ kiến nghị" /><BreakdownList rows={grouped(monthly, 'severity')} /></article>
+      <article className="panel"><PanelHeading eyebrow="SLA & trách nhiệm" title="Tình trạng xử lý" /><KpiLine label="Có kết quả xử lý" value={responseRate} tone="green" /><KpiLine label="Kiến nghị trong hạn" value={open.length ? 100 - Math.round(overdue.length * 100 / open.length) : 100} tone="blue" /><KpiLine label="Không thuộc mức cao/nghiêm trọng" value={open.length ? 100 - Math.round(high.length * 100 / open.length) : 100} tone="teal" /></article>
     </div>
-    <DashboardTable id="case-priorities" title="Vụ việc cần ưu tiên" columns={['Mã', 'Nhóm vấn đề', 'Mức độ', 'PIC', 'Deadline', 'Trạng thái']} rows={priorities.map(item => [String(item.caseCode ?? '—'), String(item.issueGroup ?? '—'), enumLabel(item.severity), String(item.ownerName ?? '—'), formatDate(item.deadline), enumLabel(publicStatus(item.status))])} />
+    <DashboardTable id="case-priorities" title="Kiến nghị cần ưu tiên" columns={['Mã', 'Nhóm vấn đề', 'Mức độ', 'PIC', 'Deadline', 'Trạng thái']} rows={priorities.map(item => [String(item.caseCode ?? '—'), String(item.issueGroup ?? '—'), enumLabel(item.severity), String(item.ownerName ?? '—'), formatDate(item.deadline), enumLabel(publicStatus(item.status))])} />
   </div>
 }

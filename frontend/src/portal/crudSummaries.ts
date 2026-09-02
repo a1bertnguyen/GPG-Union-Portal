@@ -12,7 +12,7 @@ export const welfarePresetFilters = [
 export const casePresetFilters = [
   { value: 'due24', label: 'Đến hạn 24h' },
   { value: 'overdue', label: 'Quá hạn' },
-  { value: 'repeated', label: 'Vụ việc lặp lại' },
+  { value: 'repeated', label: 'Kiến nghị lặp lại' },
   { value: 'many', label: 'Ảnh hưởng nhiều NLĐ' },
 ]
 export const activityPresetFilters = [
@@ -45,7 +45,7 @@ export const welfarePolicySummary = (metrics: Record<string, number>) => cards([
   { label: 'Công ty hỗ trợ', value: metric(metrics, 'company'), tone: 'orange' },
 ])
 export const caseSummary = (metrics: Record<string, number>) => cards([
-  { label: 'Vụ việc đang mở', value: metric(metrics, 'open'), tone: 'blue' },
+  { label: 'Kiến nghị đang mở', value: metric(metrics, 'open'), tone: 'blue' },
   { label: 'Sắp / quá hạn', value: metric(metrics, 'dueOrOverdue'), tone: 'orange' },
   { label: 'Chờ ADMIN duyệt', value: metric(metrics, 'pendingApproval'), tone: 'orange' },
   { label: 'Đã đóng', value: metric(metrics, 'closed'), tone: 'green' },

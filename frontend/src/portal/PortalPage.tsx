@@ -15,8 +15,8 @@ import { WelfarePolicyPage, WelfareRecordPage } from '../pages/WelfarePages'
 import ReportsPage from '../pages/ReportsPage'
 import UsersPage from '../pages/UsersPage'
 import type { UnionUnit } from '../types'
-import { activityColumns, memberColumns, unitColumns } from './crudColumns'
-import { activityFields, memberFields, unitFields } from './crudFields'
+import { activityColumns, caseIssueGroupColumns, memberColumns, unitColumns } from './crudColumns'
+import { activityFields, caseIssueGroupFields, memberFields, unitFields } from './crudFields'
 import {
   activityPresetFilters, activitySummary,
   memberPresetFilters, memberSummary, unitSummary,
@@ -51,16 +51,17 @@ export default function PortalPage({
   if (active === 'memberDocuments') return <MemberDocumentsPage units={units} />
   if (active === 'caseReports') return <CasesInsightPage units={units} mode="reports" isAdmin={isAdmin} unitCode={session.user.unionUnitCode} />
   if (active === 'caseAnalytics') return <CasesInsightPage units={units} mode="analytics" isAdmin={isAdmin} unitCode={session.user.unionUnitCode} />
+  if (active === 'caseIssueGroups') return <CrudPage endpoint="/case-issue-groups" title="Danh mục nhóm vấn đề" description="ADMIN tạo và duy trì các nhóm để người dùng chọn khi tạo kiến nghị." singular="Nhóm vấn đề" fields={caseIssueGroupFields} columns={caseIssueGroupColumns} units={units} readOnly={!isAdmin} readOnlyMessage="Chỉ ADMIN được tạo, sửa hoặc ngừng áp dụng nhóm vấn đề." />
   if (active === 'welfarePolicies') return <WelfarePolicyPage units={units} isAdmin={isAdmin} />
   if (active === 'welfareDocuments') return <WelfareInsightPage units={units} mode="documents" />
   if (active === 'activityGallery') return <ActivityGalleryPage units={units} />
   if (active === 'activityReports') return <ActivityReportsPage isAdmin={isAdmin} />
 
   if (active === 'units') return <CrudPage endpoint="/units" title="Hồ sơ CĐCS & Ban chấp hành" description="Theo dõi pháp lý, nhiệm kỳ, quyết định và đầu mối của từng đơn vị." singular="CĐCS" fields={unitFields} columns={unitColumns} units={units} excelResource="units" excelFilename="mau-cdcs.xlsx" canImportExcel={isAdmin} readOnly={!isAdmin} readOnlyMessage="Chỉ ADMIN được thay đổi cấu trúc và thông tin CĐCS." summaryBuilder={unitSummary} />
-  if (active === 'members') return <CrudPage endpoint="/members" title="Hồ sơ đoàn viên & người lao động" description="Quản lý hồ sơ theo danh mục công ty, nơi làm việc chuẩn; cập nhật biến động và xuất Excel theo cấu trúc thống nhất." singular="Đoàn viên" fields={memberFields} columns={memberColumns} units={units} wideForm enableMemberExcel excelResource="members" excelFilename="mau-doan-vien.xlsx" summaryBuilder={memberSummary} presetFilters={memberPresetFilters} detailActionLabel="Mở hồ sơ" detailRenderer={(member, refresh) => <MemberDetailPanel member={member} refreshMembers={refresh} />} />
+  if (active === 'members') return <CrudPage endpoint="/members" title="Hồ sơ đoàn viên & người lao động" description="Quản lý hồ sơ theo danh mục công ty, nơi làm việc chuẩn; cập nhật thông tin và xuất Excel theo cấu trúc thống nhất." singular="Đoàn viên" fields={memberFields} columns={memberColumns} units={units} wideForm enableMemberExcel excelResource="members" excelFilename="mau-doan-vien.xlsx" summaryBuilder={memberSummary} presetFilters={memberPresetFilters} detailActionLabel="Mở hồ sơ" detailRenderer={(member, refresh) => <MemberDetailPanel member={member} refreshMembers={refresh} />} />
   if (active === 'welfare') return <WelfareRecordPage units={units} isAdmin={isAdmin} />
   if (active === 'cases') return <LaborCasePage units={units} isAdmin={isAdmin} />
-  if (active === 'activities') return <CrudPage endpoint="/activities" title="Kế hoạch hoạt động" description="Tạo và quản lý thông tin kế hoạch. Kết quả thực tế, KPI và chứng cứ được hoàn thiện tại Báo cáo chương trình." singular="Hoạt động" fields={activityFields} columns={activityColumns} units={units} excelResource="activities" excelFilename="mau-hoat-dong.xlsx" summaryBuilder={activitySummary} presetFilters={activityPresetFilters} />
+  if (active === 'activities') return <CrudPage endpoint="/activities" title="Kế hoạch chương trình" description="Tạo và quản lý thông tin kế hoạch. Kết quả thực tế, KPI và chứng cứ được hoàn thiện tại Báo cáo sau chương trình." singular="Chương trình" fields={activityFields} columns={activityColumns} units={units} excelResource="activities" excelFilename="mau-chuong-trinh.xlsx" summaryBuilder={activitySummary} presetFilters={activityPresetFilters} />
 
   return <FinanceEntryPage units={units} />
 }

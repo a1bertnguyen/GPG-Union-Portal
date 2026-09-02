@@ -188,6 +188,21 @@ function WelfareDetailPanel({ item, refresh, isAdmin }: {
     }
   }
 
+  const complete = async () => {
+    if (!window.confirm(`Xác nhận đã hoàn thành chăm lo ${record.recordCode}?`)) return
+    setApproving(true)
+    setError('')
+    try {
+      const completed = await api<WelfareRecord>(`/welfare/${record.id}/complete`, { method: 'POST' })
+      setStatus(completed.status)
+      await refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Không thể hoàn thành chăm lo')
+    } finally {
+      setApproving(false)
+    }
+  }
+
   const canChangeDocuments = isAdmin || !['COMPLETED', 'CANCELLED'].includes(status)
 
   return <div className="member-detail">
@@ -209,6 +224,11 @@ function WelfareDetailPanel({ item, refresh, isAdmin }: {
     {isAdmin && status === 'IN_PROGRESS' && <div className="notice notice--compact">
       <strong>Đã tạo phiếu chi tự động</strong>
       <span>Mã phiếu PC-CL-{record.id} đã được ghi vào Tài chính nội bộ theo số tiền của chính sách.</span>
+    </div>}
+
+    {!isAdmin && status === 'IN_PROGRESS' && <div className="notice notice--compact">
+      <div><strong>Chăm lo đang xử lý</strong><span>Sau khi đã thực hiện chăm lo cho người thụ hưởng, xác nhận hoàn thành để cập nhật trạng thái hồ sơ.</span></div>
+      <button className="button button--primary" disabled={approving} onClick={() => void complete()}>{approving ? 'Đang cập nhật…' : 'Hoàn thành chăm lo'}</button>
     </div>}
 
     <section>

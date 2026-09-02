@@ -9,6 +9,7 @@ import org.apache.poi.ss.util.CellRangeAddressList;
 import org.apache.poi.xssf.usermodel.XSSFDataValidationHelper;
 import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.data.domain.Sort;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -38,6 +39,9 @@ public class SpreadsheetImportService {
     private static final int MAX_REPORTED_ERRORS = 100;
     private static final String DATA_SHEET = "Dữ liệu";
     private static final String GUIDE_SHEET = "Hướng dẫn";
+    private static final String WELFARE_RULES_SHEET = "Quy tắc nhập liệu";
+    private static final String WELFARE_POLICY_SHEET = "Danh mục chính sách";
+    private static final String WELFARE_POLICY_RANGE = "activeWelfarePolicyChoices";
     private static final List<DateTimeFormatter> DATE_FORMATS = List.of(
             DateTimeFormatter.ISO_LOCAL_DATE,
             DateTimeFormatter.ofPattern("d/M/uuuu"),
@@ -48,6 +52,7 @@ public class SpreadsheetImportService {
     private final UnionUnitRepository unitRepository;
     private final MemberRepository memberRepository;
     private final WelfareRecordRepository welfareRepository;
+    private final WelfarePolicyRepository welfarePolicyRepository;
     private final LaborCaseRepository caseRepository;
     private final UnionActivityRepository activityRepository;
     private final FinanceEntryRepository financeRepository;
@@ -65,6 +70,7 @@ public class SpreadsheetImportService {
     public SpreadsheetImportService(UnionUnitRepository unitRepository,
                                     MemberRepository memberRepository,
                                     WelfareRecordRepository welfareRepository,
+                                    WelfarePolicyRepository welfarePolicyRepository,
                                     LaborCaseRepository caseRepository,
                                     UnionActivityRepository activityRepository,
                                     FinanceEntryRepository financeRepository,
@@ -81,6 +87,7 @@ public class SpreadsheetImportService {
         this.unitRepository = unitRepository;
         this.memberRepository = memberRepository;
         this.welfareRepository = welfareRepository;
+        this.welfarePolicyRepository = welfarePolicyRepository;
         this.caseRepository = caseRepository;
         this.activityRepository = activityRepository;
         this.financeRepository = financeRepository;
@@ -103,7 +110,16 @@ public class SpreadsheetImportService {
 
         try (var workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
             var styles = createStyles(workbook);
-            createDataSheet(workbook, resource, styles);
+            List<WelfarePolicy> welfarePolicies = resource == Resource.WELFARE
+                    ? createWelfarePolicySheet(workbook, styles)
+                    : List.of();
+            createDataSheet(workbook, resource, styles, !welfarePolicies.isEmpty());
+            if (resource == Resource.WELFARE) {
+                createWelfareRulesSheet(workbook, styles, !welfarePolicies.isEmpty());
+                workbook.setSheetOrder(DATA_SHEET, 0);
+                workbook.setSheetOrder(WELFARE_RULES_SHEET, 1);
+                workbook.setSheetOrder(WELFARE_POLICY_SHEET, 2);
+            }
             createGuideSheet(workbook, resource, styles);
             workbook.setActiveSheet(0);
             workbook.write(output);
@@ -126,7 +142,7 @@ public class SpreadsheetImportService {
 
         try (var workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
             var styles = createStyles(workbook);
-            createDataSheet(workbook, resource, styles);
+            createDataSheet(workbook, resource, styles, false);
             createGuideSheet(workbook, resource, styles);
             Sheet sheet = workbook.getSheet(DATA_SHEET);
             for (int rowIndex = 0; rowIndex < reports.size(); rowIndex++) {
@@ -286,15 +302,37 @@ public class SpreadsheetImportService {
         String code = row.required("recordCode");
         var existing = welfareRepository.findByRecordCodeIgnoreCase(code);
         UnionUnit unit = scopedUnit(row.required("unitCode"), existing.map(WelfareRecord::getUnionUnit).orElse(null));
+        LocalDate eventDate = row.date("eventDate", true);
+        WelfarePolicy policy = selectedWelfarePolicy(row);
+        BigDecimal amount = row.decimal("amount", false);
+        if (amount == null && policy == null) {
+            throw new IllegalArgumentException("amount không được để trống khi không chọn chính sách chăm lo");
+        }
         var request = validate(new WelfareRequest(
-                code, row.enumValue("welfareType", WelfareType.class, true), row.optional("policyName"), unit.getId(),
-                row.required("beneficiaryName"), row.date("eventDate", true), row.date("deadline", false),
-                row.enumValue("status", WorkStatus.class, true), row.decimal("amount", true),
-                row.decimal("standardAmount", false), row.enumValue("documentStatus", DocumentStatus.class, true),
+                code, policy == null ? row.enumValue("welfareType", WelfareType.class, true) : policy.getWelfareType(),
+                policy == null ? row.optional("policyName") : policy.getName(), unit.getId(),
+                row.required("beneficiaryName"), eventDate,
+                policy == null ? row.date("deadline", false) : eventDate.plusWeeks(policy.getProcessingWeeks()),
+                row.enumValue("status", WorkStatus.class, true), amount == null ? policy.getSupportAmount() : amount,
+                policy == null ? row.decimal("standardAmount", false) : policy.getSupportAmount(),
+                row.enumValue("documentStatus", DocumentStatus.class, true),
                 Optional.ofNullable(row.enumValue("receiptStatus", DocumentStatus.class, false)).orElse(DocumentStatus.INCOMPLETE),
-                Optional.ofNullable(row.bool("hasImage", false)).orElse(false), row.optional("notes"), null));
+                Optional.ofNullable(row.bool("hasImage", false)).orElse(false), row.optional("notes"),
+                policy == null ? null : policy.getId()));
         welfareRepository.save(mapper.apply(existing.orElseGet(WelfareRecord::new), request));
         return existing.isEmpty();
+    }
+
+    private WelfarePolicy selectedWelfarePolicy(RowValues row) {
+        String selection = row.optional("policyCode");
+        if (selection == null) return null; // Keep files created with the former manual-policy template importable.
+        String policyCode = selection.split("\\s+—\\s+", 2)[0].trim();
+        WelfarePolicy policy = welfarePolicyRepository.findByCodeIgnoreCase(policyCode)
+                .orElseThrow(() -> new IllegalArgumentException("không tìm thấy chính sách chăm lo có mã " + policyCode));
+        if (!Boolean.TRUE.equals(policy.getActive())) {
+            throw new IllegalArgumentException("chính sách chăm lo " + policyCode + " đã ngừng áp dụng");
+        }
+        return policy;
     }
 
     private boolean importCase(RowValues row) {
@@ -536,7 +574,8 @@ public class SpreadsheetImportService {
             String value = cellText(cell);
             if (value == null) continue;
             String normalized = value.toLowerCase(Locale.ROOT);
-            String key = resource == Resource.CASES ? caseHeaderAlias(value) : null;
+            String key = resource == Resource.CASES ? caseHeaderAlias(value)
+                    : resource == Resource.WELFARE ? welfareHeaderAlias(value) : null;
             if (key == null) key = resource.columns.stream()
                     .filter(column -> column.name.equalsIgnoreCase(value) || column.header().equalsIgnoreCase(value))
                     .map(column -> column.name.toLowerCase(Locale.ROOT))
@@ -550,10 +589,14 @@ public class SpreadsheetImportService {
     }
 
     private boolean isBook1CaseLayout(Resource resource, Map<String, Integer> headers) {
-        return resource == Resource.CASES
+        return (resource == Resource.CASES
                 && headers.containsKey("requestername")
                 && headers.containsKey("receiveddate")
-                && headers.containsKey("description");
+                && headers.containsKey("description"))
+                || (resource == Resource.WELFARE
+                && headers.containsKey("policyname")
+                && headers.containsKey("welfaretype")
+                && !headers.containsKey("policycode"));
     }
 
     private String caseHeaderAlias(String header) {
@@ -573,6 +616,22 @@ public class SpreadsheetImportService {
             case "yeu cau" -> "description";
             case "ngay yeu cau" -> "receiveddate";
             case "ngay tra loi" -> "responsedate";
+            default -> null;
+        };
+    }
+
+    private String welfareHeaderAlias(String header) {
+        String normalized = Normalizer.normalize(header, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .trim()
+                .toLowerCase(Locale.ROOT)
+                .replaceAll("\\s+", " ");
+        return switch (normalized) {
+            case "ten chinh sach / dinh muc ap dung", "ten chinh sach" -> "policyName";
+            case "loai cham lo" -> "welfareType";
+            case "han hoan tat" -> "deadline";
+            case "so tien" -> "amount";
+            case "dinh muc" -> "standardAmount";
             default -> null;
         };
     }
@@ -616,7 +675,7 @@ public class SpreadsheetImportService {
         return value.length() <= maxLength ? value : value.substring(0, maxLength);
     }
 
-    private void createDataSheet(XSSFWorkbook workbook, Resource resource, Styles styles) {
+    private void createDataSheet(XSSFWorkbook workbook, Resource resource, Styles styles, boolean hasWelfarePolicies) {
         XSSFSheet sheet = workbook.createSheet(DATA_SHEET);
         sheet.createFreezePane(0, 1);
         Row header = sheet.createRow(0);
@@ -631,8 +690,106 @@ public class SpreadsheetImportService {
             if ("month".equals(column.kind)) sheet.setDefaultColumnStyle(index, styles.month);
             if ("number".equals(column.kind)) sheet.setDefaultColumnStyle(index, styles.number);
             if (column.allowed.length > 0) addListValidation(sheet, index, column.allowed);
+            if (resource == Resource.WELFARE && "policyCode".equals(column.name) && hasWelfarePolicies) {
+                addFormulaListValidation(sheet, index, WELFARE_POLICY_RANGE,
+                        "Chọn chính sách", "Chọn một chính sách từ danh mục đang áp dụng.");
+            }
         }
         sheet.setAutoFilter(new CellRangeAddress(0, 0, 0, resource.columns.size() - 1));
+    }
+
+    private List<WelfarePolicy> createWelfarePolicySheet(XSSFWorkbook workbook, Styles styles) {
+        List<WelfarePolicy> policies = welfarePolicyRepository.findAll(Sort.by("sequenceNumber", "source", "id")).stream()
+                .filter(policy -> Boolean.TRUE.equals(policy.getActive()))
+                .toList();
+        XSSFSheet sheet = workbook.createSheet(WELFARE_POLICY_SHEET);
+        sheet.setDisplayGridlines(false);
+        sheet.createFreezePane(0, 3);
+
+        Row title = sheet.createRow(0);
+        title.setHeightInPoints(26);
+        Cell titleCell = title.createCell(0);
+        titleCell.setCellValue("DANH MỤC CHÍNH SÁCH CHĂM LO ĐANG ÁP DỤNG");
+        titleCell.setCellStyle(styles.header);
+        sheet.addMergedRegion(new CellRangeAddress(0, 0, 0, 6));
+
+        Row hint = sheet.createRow(1);
+        Cell hintCell = hint.createCell(0);
+        hintCell.setCellValue("Danh sách này do ADMIN ban hành. Ở sheet Dữ liệu, hãy chọn một giá trị trong cột Chính sách chăm lo.");
+        hintCell.setCellStyle(styles.note);
+        sheet.addMergedRegion(new CellRangeAddress(1, 1, 0, 6));
+
+        String[] headers = {"Lựa chọn", "Mã chính sách", "Nội dung chính sách", "Loại chăm lo",
+                "Mức hỗ trợ (VNĐ)", "Đối tượng / điều kiện", "Thời hạn xử lý (tuần)"};
+        Row header = sheet.createRow(2);
+        header.setHeightInPoints(30);
+        for (int index = 0; index < headers.length; index++) {
+            Cell cell = header.createCell(index);
+            cell.setCellValue(headers[index]);
+            cell.setCellStyle(styles.header);
+        }
+
+        for (int index = 0; index < policies.size(); index++) {
+            WelfarePolicy policy = policies.get(index);
+            Row row = sheet.createRow(index + 3);
+            setCell(row, 0, policy.getCode() + " — " + policy.getName(), styles.body);
+            setCell(row, 1, policy.getCode(), styles.body);
+            setCell(row, 2, policy.getName(), styles.body);
+            setCell(row, 3, policy.getWelfareType().name(), styles.body);
+            Cell amount = row.createCell(4, CellType.NUMERIC);
+            amount.setCellValue(policy.getSupportAmount().doubleValue());
+            amount.setCellStyle(styles.number);
+            setCell(row, 5, policy.getEligibilityNotes(), styles.body);
+            Cell processingWeeks = row.createCell(6, CellType.NUMERIC);
+            processingWeeks.setCellValue(policy.getProcessingWeeks());
+            processingWeeks.setCellStyle(styles.number);
+        }
+        int[] widths = {44, 20, 38, 20, 22, 48, 24};
+        for (int index = 0; index < widths.length; index++) sheet.setColumnWidth(index, widths[index] * 256);
+
+        if (!policies.isEmpty()) {
+            Name namedRange = workbook.createName();
+            namedRange.setNameName(WELFARE_POLICY_RANGE);
+            namedRange.setRefersToFormula("'" + WELFARE_POLICY_SHEET + "'!$A$4:$A$" + (policies.size() + 3));
+        }
+        return policies;
+    }
+
+    private void createWelfareRulesSheet(XSSFWorkbook workbook, Styles styles, boolean hasWelfarePolicies) {
+        Sheet sheet = workbook.createSheet(WELFARE_RULES_SHEET);
+        sheet.setDisplayGridlines(false);
+        sheet.createFreezePane(0, 1);
+        Row title = sheet.createRow(0);
+        title.setHeightInPoints(28);
+        Cell titleCell = title.createCell(0);
+        titleCell.setCellValue("QUY TẮC NHẬP EXCEL CHĂM LO");
+        titleCell.setCellStyle(styles.header);
+        sheet.addMergedRegion(new CellRangeAddress(0, 0, 0, 2));
+
+        String[][] rules = {
+                {"1", "Chọn chính sách", hasWelfarePolicies
+                        ? "Bắt buộc chọn một chính sách trong dropdown ở cột Chính sách chăm lo. Danh mục chỉ gồm các chính sách đang áp dụng."
+                        : "ADMIN cần tạo ít nhất một chính sách đang áp dụng trước khi tải lại mẫu; hiện chưa có lựa chọn để hiển thị."},
+                {"2", "Áp dụng tự động", "Hệ thống tự lấy loại chăm lo, nội dung chính sách, định mức và hạn hoàn tất theo chính sách đã chọn."},
+                {"3", "Số tiền thực tế", "Có thể để trống để dùng đúng mức hỗ trợ của chính sách. Nếu nhập số khác, cần ghi rõ lý do tại cột Ghi chú."},
+                {"4", "Ngày và số", "Ngày theo yyyy-MM-dd. Số tiền chỉ nhập số, có thể dùng dấu phẩy phân cách hàng nghìn; không nhập công thức."},
+                {"5", "Cập nhật hồ sơ", "Mã hồ sơ là khóa cập nhật: trùng mã sẽ cập nhật hồ sơ có sẵn. Không đổi tên cột trong sheet Dữ liệu."},
+                {"6", "Trạng thái và chứng từ", "Chọn trạng thái, tình trạng hồ sơ và biên nhận bằng dropdown. Tệp đính kèm được tải lên sau khi nhập hồ sơ."}
+        };
+        String[] headers = {"STT", "Quy tắc", "Hướng dẫn"};
+        Row header = sheet.createRow(2);
+        for (int index = 0; index < headers.length; index++) {
+            Cell cell = header.createCell(index);
+            cell.setCellValue(headers[index]);
+            cell.setCellStyle(styles.header);
+        }
+        for (int index = 0; index < rules.length; index++) {
+            Row row = sheet.createRow(index + 3);
+            for (int column = 0; column < rules[index].length; column++) setCell(row, column, rules[index][column], styles.body);
+        }
+        sheet.setColumnWidth(0, 10 * 256);
+        sheet.setColumnWidth(1, 26 * 256);
+        sheet.setColumnWidth(2, 100 * 256);
     }
 
     private void createGuideSheet(XSSFWorkbook workbook, Resource resource, Styles styles) {
@@ -675,6 +832,23 @@ public class SpreadsheetImportService {
         validation.setShowErrorBox(true);
         validation.createErrorBox("Giá trị không hợp lệ", "Chọn một giá trị trong danh sách.");
         sheet.addValidationData(validation);
+    }
+
+    private void addFormulaListValidation(XSSFSheet sheet, int columnIndex, String formula,
+                                          String title, String message) {
+        var helper = new XSSFDataValidationHelper(sheet);
+        var constraint = helper.createFormulaListConstraint(formula);
+        var addresses = new CellRangeAddressList(1, MAX_DATA_ROWS, columnIndex, columnIndex);
+        var validation = helper.createValidation(constraint, addresses);
+        validation.setShowErrorBox(true);
+        validation.createErrorBox(title, message);
+        sheet.addValidationData(validation);
+    }
+
+    private void setCell(Row row, int columnIndex, String value, CellStyle style) {
+        Cell cell = row.createCell(columnIndex, CellType.STRING);
+        cell.setCellValue(value == null ? "" : value);
+        cell.setCellStyle(style);
     }
 
     private Styles createStyles(XSSFWorkbook workbook) {
@@ -760,10 +934,9 @@ public class SpreadsheetImportService {
                 e("employmentStatus", "Trạng thái nhân sự", true, "ACTIVE", "INACTIVE"))),
         WELFARE("welfare", "chăm lo", "mau-cham-lo.xlsx", IntegrationType.WELFARE_IMPORT, false, List.of(
                 c("recordCode", "Mã hồ sơ, khóa cập nhật", true, 20),
-                e("welfareType", "Loại chăm lo", true, "BIRTHDAY", "FUNERAL", "WEDDING", "VISIT", "CHILDBIRTH", "HARDSHIP"),
-                c("policyName", "Tên chính sách / định mức áp dụng", false, 30), c("unitCode", "Mã CĐCS", true, 18), c("beneficiaryName", "Người thụ hưởng", true, 28),
-                d("eventDate", "Ngày sự kiện", true), d("deadline", "Hạn hoàn tất", false), e("status", "Trạng thái xử lý", true, "NEW", "PENDING_APPROVAL", "IN_PROGRESS", "COMPLETED", "CANCELLED"),
-                n("amount", "Số tiền", true), n("standardAmount", "Định mức", false), e("documentStatus", "Tình trạng hồ sơ", true, "COMPLETE", "INCOMPLETE", "NOT_REQUIRED"),
+                c("policyCode", "Chính sách chăm lo, chọn từ danh mục", true, 44), c("unitCode", "Mã CĐCS", true, 18), c("beneficiaryName", "Người thụ hưởng", true, 28),
+                d("eventDate", "Ngày sự kiện", true), e("status", "Trạng thái xử lý", true, "NEW", "PENDING_APPROVAL", "IN_PROGRESS", "COMPLETED", "CANCELLED"),
+                n("amount", "Số tiền thực tế, để trống dùng định mức", false), e("documentStatus", "Tình trạng hồ sơ", true, "COMPLETE", "INCOMPLETE", "NOT_REQUIRED"),
                 e("receiptStatus", "Tình trạng biên nhận", false, "COMPLETE", "INCOMPLETE", "NOT_REQUIRED"), e("hasImage", "Có hình ảnh", false, "TRUE", "FALSE"),
                 c("notes", "Ghi chú", false, 42))),
         CASES("cases", "vụ việc", "mau-vu-viec.xlsx", IntegrationType.CASES_IMPORT, false, List.of(

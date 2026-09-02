@@ -38,7 +38,7 @@ export default function LoginPage({ notice, onLogin }: Props) {
     <main className="login-page">
       <section className="login-brand-panel">
         <div className="login-brand"><div className="brand__mark">G</div><div><strong>GPG Union</strong><span>Internal Portal</span></div></div>
-        <div className="login-brand-copy"><p className="eyebrow">Cổng công đoàn nội bộ</p><h1>Dữ liệu công đoàn.<br />Vận hành thống nhất.</h1><p>Quản lý đoàn viên, chính sách, vụ việc, hoạt động và báo cáo theo đúng phạm vi được phân quyền.</p></div>
+        <div className="login-brand-copy"><p className="eyebrow">Cổng công đoàn nội bộ</p><h1>Dữ liệu công đoàn.<br />Vận hành thống nhất.</h1><p>Quản lý đoàn viên, chính sách, kiến nghị, chương trình và báo cáo theo đúng phạm vi được phân quyền.</p></div>
         <div className="login-security-note"><span>●</span><div><strong>Kết nối nội bộ được bảo vệ</strong><small>Phiên làm việc tự động hết hạn khi hết thời gian cho phép.</small></div></div>
       </section>
 

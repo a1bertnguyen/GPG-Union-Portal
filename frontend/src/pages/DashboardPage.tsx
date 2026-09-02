@@ -17,11 +17,11 @@ const emptySummary: DashboardSummary = {
 }
 
 const dashboardMeta: Record<DashboardKind, { eyebrow: string; title: string; description: string }> = {
-  executive: { eyebrow: 'Dashboard điều hành', title: 'Tổng quan Ban lãnh đạo', description: 'Các chỉ số toàn hệ thống, công việc ưu tiên và vấn đề cần quyết định.' },
-  welfare: { eyebrow: 'Dashboard chăm lo', title: 'Chăm lo & chính sách', description: 'Tiến độ thực hiện, cơ cấu đối tượng và hồ sơ cần hoàn thiện.' },
-  cases: { eyebrow: 'Dashboard vụ việc', title: 'Kiến nghị & quan hệ lao động', description: 'Theo dõi SLA, mức độ nghiêm trọng, PIC và kết quả xử lý.' },
-  activities: { eyebrow: 'Dashboard hoạt động', title: 'Chương trình công đoàn', description: 'Kế hoạch, mức tham gia, ngân sách và báo cáo sau chương trình.' },
-  finance: { eyebrow: 'Dashboard tài chính', title: 'Thu • Chi • Tạm ứng', description: 'Tổng hợp phiếu và tình trạng chứng từ; không kết nối ngân hàng hoặc dịch vụ thanh toán.' },
+  executive: { eyebrow: 'Tổng quan điều hành', title: 'Tổng quan Ban lãnh đạo', description: 'Các chỉ số toàn hệ thống, công việc ưu tiên và vấn đề cần quyết định.' },
+  welfare: { eyebrow: 'Tổng quan chăm lo', title: 'Chăm lo & chính sách', description: 'Tiến độ thực hiện, cơ cấu đối tượng và hồ sơ cần hoàn thiện.' },
+  cases: { eyebrow: 'Tổng quan kiến nghị', title: 'Kiến nghị & quan hệ lao động', description: 'Theo dõi SLA, mức độ nghiêm trọng, PIC và kết quả xử lý.' },
+  activities: { eyebrow: 'Tổng quan chương trình', title: 'Chương trình công đoàn', description: 'Kế hoạch, mức tham gia, ngân sách và báo cáo sau chương trình.' },
+  finance: { eyebrow: 'Tổng quan tài chính', title: 'Thu • Chi • Tạm ứng', description: 'Tổng hợp phiếu và tình trạng chứng từ; không kết nối ngân hàng hoặc dịch vụ thanh toán.' },
 }
 
 export default function DashboardPage({ kind }: Props) {
@@ -59,7 +59,7 @@ export default function DashboardPage({ kind }: Props) {
       setError('')
     }).catch(err => {
       if (!controller.signal.aborted) {
-        setError(err instanceof Error ? err.message : 'Không thể tổng hợp dashboard')
+        setError(err instanceof Error ? err.message : 'Không thể tổng hợp dữ liệu')
       }
     }).finally(() => {
       if (!controller.signal.aborted) setLoading(false)

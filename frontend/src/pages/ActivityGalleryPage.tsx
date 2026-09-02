@@ -105,7 +105,7 @@ export default function ActivityGalleryPage({ units }: { units: UnionUnit[] }) {
       await refreshAll()
     } catch (err) {
       const label = isPhotoView ? 'ảnh' : 'tài liệu'
-      setActionError(err instanceof Error ? err.message : `Không thể tải ${label} hoạt động`)
+      setActionError(err instanceof Error ? err.message : `Không thể tải ${label} chương trình`)
     } finally {
       setSaving(false)
     }
@@ -117,7 +117,7 @@ export default function ActivityGalleryPage({ units }: { units: UnionUnit[] }) {
       await api(`/activity-media/${item.id}`, { method: 'DELETE' })
       await refreshAll()
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Không thể xóa tệp hoạt động')
+      setActionError(err instanceof Error ? err.message : 'Không thể xóa tệp chương trình')
     }
   }
 
@@ -129,21 +129,21 @@ export default function ActivityGalleryPage({ units }: { units: UnionUnit[] }) {
       </select>
     </FilterField>
     <FilterField label="Trạng thái">
-      <select aria-label="Lọc theo trạng thái hoạt động" value={status} onChange={event => setStatus(event.target.value)}>
+      <select aria-label="Lọc theo trạng thái chương trình" value={status} onChange={event => setStatus(event.target.value)}>
         <option value="">Tất cả</option>
         <option value="IN_PROGRESS">Đang triển khai</option>
         <option value="COMPLETED">Đã hoàn tất</option>
       </select>
     </FilterField>
     <FilterField label="Tìm kiếm" search>
-      <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Mã / tên hoạt động…" />
+      <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Mã / tên chương trình…" />
     </FilterField>
   </TableFilterBar>
 
   return <section className="page-section">
     <div className="page-heading">
       <div>
-        <p className="eyebrow">Hoạt động / Chứng cứ báo cáo</p>
+        <p className="eyebrow">Chương trình / Chứng cứ báo cáo</p>
         <h1>Ảnh & tài liệu báo cáo</h1>
         <p>Quản lý ảnh minh chứng và chứng từ bắt buộc theo từng chương trình trước khi USER nộp báo cáo.</p>
       </div>
@@ -153,10 +153,10 @@ export default function ActivityGalleryPage({ units }: { units: UnionUnit[] }) {
 
     <div className="notice">
       <strong>Chứng cứ bắt buộc của báo cáo</strong>
-      <span>Mỗi báo cáo cần ít nhất 1 ảnh và 1 chứng từ. Danh sách tham dự và phản hồi được nhập tại mục “Báo cáo chương trình”.</span>
+      <span>Mỗi báo cáo cần ít nhất 1 ảnh và 1 tài liệu. Danh sách tham gia và báo cáo được tải hoặc nhập tại mục “Báo cáo sau chương trình”.</span>
     </div>
 
-    <div className="library-switch" role="tablist" aria-label="Loại thư viện hoạt động">
+    <div className="library-switch" role="tablist" aria-label="Loại thư viện chương trình">
       <button
         type="button"
         role="tab"
@@ -184,8 +184,8 @@ export default function ActivityGalleryPage({ units }: { units: UnionUnit[] }) {
         <p className="eyebrow">Minh chứng bắt buộc</p>
         <strong>{isPhotoView ? 'Ảnh check-in, triển khai hoặc kết quả chương trình' : 'Hóa đơn, chứng từ, biên bản hoặc tài liệu kết quả'}</strong>
       </div>
-      <select required value={activityId} onChange={event => setActivityId(event.target.value)} aria-label="Hoạt động">
-        <option value="">Chọn hoạt động…</option>
+      <select required value={activityId} onChange={event => setActivityId(event.target.value)} aria-label="Chương trình">
+        <option value="">Chọn chương trình…</option>
         {activityOptions.map(item => <option key={item.id} value={item.id}>{String(item.activityCode)} · {String(item.name)}</option>)}
       </select>
       <input
@@ -243,15 +243,15 @@ export default function ActivityGalleryPage({ units }: { units: UnionUnit[] }) {
     <ListCard
       list={activities}
       className="list-card--grid list-card--spaced"
-      unit="hoạt động"
-      title={`${activities.total} hoạt động`}
+      unit="chương trình"
+      title={`${activities.total} chương trình`}
       subtitle="Kiểm tra mức độ sẵn sàng trước khi nộp báo cáo chương trình"
       actions={<button className="button button--ghost" onClick={() => void refreshAll()}>Làm mới</button>}
     >
       {activities.loading
         ? <div className="empty-state">Đang kiểm tra chứng cứ báo cáo…</div>
         : !activities.rows.length
-          ? <div className="empty-state">{filtersActive ? 'Không có hoạt động phù hợp bộ lọc.' : 'Chưa có hoạt động.'}</div>
+          ? <div className="empty-state">{filtersActive ? 'Không có chương trình phù hợp bộ lọc.' : 'Chưa có chương trình.'}</div>
           : <div className="report-evidence-grid">{activities.rows.map(item => {
               const evidence = allMedia.filter(mediaItem => mediaItem.activityId === item.id)
               const photoCount = evidence.filter(mediaItem => mediaItem.mediaType === 'PHOTO').length
@@ -260,7 +260,7 @@ export default function ActivityGalleryPage({ units }: { units: UnionUnit[] }) {
                 ['Ảnh minh chứng', photoCount > 0, `${photoCount} tệp`],
                 ['Chứng từ', documentCount > 0, `${documentCount} tệp`],
                 ['Danh sách tham dự', Boolean(item.participantList), item.participantList ? 'Đã có' : 'Chưa có'],
-                ['Phản hồi', Boolean(item.quickFeedback), item.quickFeedback ? 'Đã có' : 'Chưa có'],
+                ['Báo cáo', Boolean(item.quickFeedback), item.quickFeedback ? 'Đã có' : 'Chưa có'],
               ] as const
 
               return <article className="data-card report-evidence-card" key={item.id}>

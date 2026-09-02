@@ -170,6 +170,12 @@ public final class ApiModels {
             @NotNull LocalDate deadline) {
     }
 
+    public record CaseIssueGroupRequest(
+            @NotBlank @Size(max = 40) String code,
+            @NotBlank @Size(max = 120) String name,
+            @NotNull Boolean active) {
+    }
+
     public record ActivityRequest(
             @NotBlank @Size(max = 40) String activityCode,
             @NotBlank @Size(max = 200) String name,
@@ -317,6 +323,17 @@ public final class ApiModels {
             Long welfareRecordId,
             String recordCode,
             WelfareDocumentType documentType,
+            String fileName,
+            String contentType,
+            Long fileSize,
+            String uploadedBy,
+            Instant createdAt) {
+    }
+
+    public record LaborCaseDocumentView(
+            Long id,
+            Long laborCaseId,
+            String caseCode,
             String fileName,
             String contentType,
             Long fileSize,

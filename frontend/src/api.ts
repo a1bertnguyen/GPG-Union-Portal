@@ -115,7 +115,7 @@ export async function loadFileUrl(path: string) {
 }
 
 export const formatMoney = (value: number | string | undefined) =>
-  new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 })
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 })
     .format(Number(value ?? 0))
 
 export const formatDate = (value: unknown) => {
@@ -145,9 +145,9 @@ const fallbackLabels: Record<string, string> = {
   DRAFT: 'Bản nháp', SUBMITTED: 'Đã nộp',
   HR_IMPORT: 'Nhập dữ liệu HR', FINANCE_IMPORT: 'Nhập dữ liệu tài chính',
   UNITS_IMPORT: 'Nhập CĐCS từ Excel', MEMBERS_IMPORT: 'Nhập đoàn viên từ Excel',
-  WELFARE_IMPORT: 'Nhập chăm lo từ Excel', CASES_IMPORT: 'Nhập vụ việc từ Excel',
+  WELFARE_IMPORT: 'Nhập chăm lo từ Excel', CASES_IMPORT: 'Nhập kiến nghị từ Excel',
   WELFARE_POLICIES_IMPORT: 'Nhập chính sách chăm lo từ Excel',
-  ACTIVITIES_IMPORT: 'Nhập hoạt động từ Excel', FINANCE_EXCEL_IMPORT: 'Nhập tài chính từ Excel',
+  ACTIVITIES_IMPORT: 'Nhập chương trình từ Excel', FINANCE_EXCEL_IMPORT: 'Nhập tài chính từ Excel',
   SURVEYS_IMPORT: 'Nhập khảo sát từ Excel', SURVEY_RESPONSES_IMPORT: 'Nhập phản hồi khảo sát từ Excel',
   REPORTS_IMPORT: 'Nhập báo cáo từ Excel', USERS_IMPORT: 'Nhập tài khoản từ Excel',
   PARTIAL: 'Hoàn tất một phần', FAILED: 'Thất bại',

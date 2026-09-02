@@ -12,7 +12,7 @@ type Option = { value: string; label: string; disabled?: boolean }
 export type FieldConfig = {
   name: string
   label: string
-  type?: 'text' | 'date' | 'time' | 'number' | 'email' | 'textarea' | 'select' | 'unit' | 'checkbox'
+  type?: 'text' | 'date' | 'time' | 'number' | 'email' | 'textarea' | 'select' | 'unit' | 'checkbox' | 'file'
   required?: boolean
   placeholder?: string
   options?: Option[]
@@ -25,6 +25,8 @@ export type FieldConfig = {
   hidden?: boolean
   section?: string
   sectionDescription?: string
+  suggestions?: Option[]
+  currency?: boolean
 }
 
 export type ColumnConfig = {
@@ -75,9 +77,19 @@ type Props = {
   openCreateInitially?: boolean
   onInitialCreateOpened?: () => void
   deriveForm?: (form: FormState, changedField: string) => FormState
+  afterSave?: (saved: BaseRecord, form: FormState, isUpdate: boolean) => Promise<void>
 }
 
-export type FormState = Record<string, string | boolean>
+export type FormState = Record<string, string | boolean | File | null>
+
+const numberFromInput = (value: string | boolean | File | null | undefined) =>
+  Number(String(value ?? '').replaceAll(',', '').replaceAll(' ', ''))
+
+const commaNumber = (value: string | boolean | File | null | undefined) => {
+  const raw = String(value ?? '').replaceAll(',', '').replaceAll(' ', '')
+  if (!raw || Number.isNaN(Number(raw))) return raw
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(Number(raw))
+}
 
 export function StatusBadge({ value }: { value: unknown }) {
   const raw = String(value ?? '')
@@ -91,7 +103,7 @@ export function StatusBadge({ value }: { value: unknown }) {
   return <span className={`status status--${tone}`}>{enumLabel(value)}</span>
 }
 
-export default function CrudPage({ endpoint, title, description, singular, fields, columns, units, notice, enableMemberExcel = false, excelResource, excelFilename = 'mau-du-lieu.xlsx', excelDownloadPath, excelDownloadLabel, canImportExcel = true, canDownloadExcel = canImportExcel, readOnly = false, readOnlyMessage, wideForm = false, summaryBuilder, presetFilters = [], detailRenderer, detailActionLabel = 'Mở', canEditItem, canDeleteItem, openCreateInitially = false, onInitialCreateOpened, deriveForm }: Props) {
+export default function CrudPage({ endpoint, title, description, singular, fields, columns, units, notice, enableMemberExcel = false, excelResource, excelFilename = 'mau-du-lieu.xlsx', excelDownloadPath, excelDownloadLabel, canImportExcel = true, canDownloadExcel = canImportExcel, readOnly = false, readOnlyMessage, wideForm = false, summaryBuilder, presetFilters = [], detailRenderer, detailActionLabel = 'Mở', canEditItem, canDeleteItem, openCreateInitially = false, onInitialCreateOpened, deriveForm, afterSave }: Props) {
   const [formOpen, setFormOpen] = useState(openCreateInitially)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState<FormState>(() => openCreateInitially
@@ -124,7 +136,7 @@ export default function CrudPage({ endpoint, title, description, singular, field
   }, [onInitialCreateOpened, openCreateInitially])
 
   const hasUnit = fields.some(field => field.type === 'unit')
-  const searchableFields = useMemo(() => fields.filter(field => !field.hidden && field.type !== 'checkbox'), [fields])
+  const searchableFields = useMemo(() => fields.filter(field => !field.hidden && field.type !== 'checkbox' && field.type !== 'file'), [fields])
   const selectedSearchField = searchableFields.find(field => field.name === searchField)
   const statusOptions = list.facets.statusValues
   const summaryCards = useMemo(() => summaryBuilder?.(list.facets.metrics) ?? [], [list.facets.metrics, summaryBuilder])
@@ -159,7 +171,8 @@ export default function CrudPage({ endpoint, title, description, singular, field
   const openEdit = (item: BaseRecord) => {
     const values: FormState = {}
     fields.forEach(field => {
-      if (field.type === 'unit') values[field.name] = String(item.unionUnit?.id ?? '')
+      if (field.type === 'file') values[field.name] = null
+      else if (field.type === 'unit') values[field.name] = String(item.unionUnit?.id ?? '')
       else if (field.type === 'checkbox') values[field.name] = Boolean(item[field.name])
       else values[field.name] = String(item[field.name] ?? '')
     })
@@ -176,15 +189,23 @@ export default function CrudPage({ endpoint, title, description, singular, field
     const payload: Record<string, unknown> = {}
     fields.forEach(field => {
       const value = form[field.name]
-      if (field.type === 'number') payload[field.name] = value === '' ? null : Number(value)
+      if (field.type === 'file') return
+      if (field.type === 'number' || field.currency) payload[field.name] = value === '' ? null : numberFromInput(value)
       else if (field.type === 'unit') payload[field.name] = Number(value)
       else payload[field.name] = value === '' ? null : value
     })
     try {
-      await api(`${endpoint}${editingId ? `/${editingId}` : ''}`, {
+      const saved = await api<BaseRecord>(`${endpoint}${editingId ? `/${editingId}` : ''}`, {
         method: editingId ? 'PUT' : 'POST',
         body: JSON.stringify(payload),
       })
+      try {
+        await afterSave?.(saved, form, Boolean(editingId))
+      } catch (afterSaveError) {
+        setActionError(afterSaveError instanceof Error
+          ? `Đã lưu dữ liệu nhưng chưa tải được tệp: ${afterSaveError.message}`
+          : 'Đã lưu dữ liệu nhưng chưa tải được tệp đính kèm')
+      }
       setFormOpen(false)
       await list.reload()
     } catch (err) {
@@ -204,7 +225,7 @@ export default function CrudPage({ endpoint, title, description, singular, field
     }
   }
 
-  const updateField = (name: string, value: string | boolean) => {
+  const updateField = (name: string, value: string | boolean | File | null) => {
     setForm(current => {
       const next = { ...current, [name]: value }
       return deriveForm?.(next, name) ?? next
@@ -326,10 +347,15 @@ export default function CrudPage({ endpoint, title, description, singular, field
                       ) : field.type === 'checkbox' ? (
                         <input type="checkbox" className="checkbox" disabled={field.readOnly} checked={Boolean(form[field.name])}
                           onChange={event => updateField(field.name, event.target.checked)} />
+                      ) : field.type === 'file' ? (
+                        <input type="file" required={field.required} disabled={field.readOnly} accept=".pdf,.doc,.docx,.xls,.xlsx,image/*"
+                          onChange={event => updateField(field.name, event.target.files?.[0] ?? null)} />
                       ) : (
-                        <input type={field.type ?? 'text'} required={field.required} step={field.step} min={field.min} max={field.max} readOnly={field.readOnly}
-                          value={String(form[field.name] ?? '')} placeholder={field.placeholder}
+                        <><input type={field.currency ? 'text' : field.type ?? 'text'} inputMode={field.currency ? 'decimal' : undefined} required={field.required} step={field.step} min={field.min} max={field.max} readOnly={field.readOnly}
+                          list={field.suggestions?.length ? `field-suggestions-${field.name}` : undefined}
+                          value={field.currency ? commaNumber(form[field.name]) : String(form[field.name] ?? '')} placeholder={field.placeholder}
                           onChange={event => updateField(field.name, event.target.value)} />
+                        {field.suggestions?.length ? <datalist id={`field-suggestions-${field.name}`}>{field.suggestions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</datalist> : null}</>
                       )}
                     </label>
                   </Fragment>

@@ -12,6 +12,9 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.transaction.annotation.Transactional;
 import vn.gpg.unionportal.model.DomainEnums.IntegrationStatus;
+import vn.gpg.unionportal.model.DomainEnums.WelfarePolicySource;
+import vn.gpg.unionportal.model.DomainEnums.WelfareType;
+import vn.gpg.unionportal.model.WelfarePolicy;
 import vn.gpg.unionportal.repository.*;
 import vn.gpg.unionportal.service.SpreadsheetImportService;
 
@@ -35,6 +38,7 @@ class SpreadsheetImportServiceTests {
     @Autowired private UnionUnitRepository unitRepository;
     @Autowired private MemberRepository memberRepository;
     @Autowired private WelfareRecordRepository welfareRepository;
+    @Autowired private WelfarePolicyRepository welfarePolicyRepository;
     @Autowired private LaborCaseRepository caseRepository;
     @Autowired private UnionActivityRepository activityRepository;
     @Autowired private FinanceEntryRepository financeRepository;
@@ -73,6 +77,69 @@ class SpreadsheetImportServiceTests {
     }
 
     @Test
+    void welfareTemplateOffersActivePoliciesAndExplainsTheImportRules() throws Exception {
+        WelfarePolicy activePolicy = welfarePolicyRepository.findByCodeIgnoreCase("CD-01-01").orElseThrow();
+        WelfarePolicy inactivePolicy = new WelfarePolicy();
+        inactivePolicy.setCode("XLS-INACTIVE-POLICY");
+        inactivePolicy.setSource(WelfarePolicySource.UNION);
+        inactivePolicy.setSequenceNumber(9_999);
+        inactivePolicy.setWelfareType(WelfareType.HARDSHIP);
+        inactivePolicy.setName("Chính sách ngừng áp dụng để kiểm thử");
+        inactivePolicy.setSupportAmount(new java.math.BigDecimal("100000"));
+        inactivePolicy.setProcessingWeeks(1);
+        inactivePolicy.setActive(false);
+        welfarePolicyRepository.save(inactivePolicy);
+
+        byte[] bytes = service.createTemplate("welfare");
+
+        try (var workbook = WorkbookFactory.create(new ByteArrayInputStream(bytes))) {
+            var dataSheet = workbook.getSheet("Dữ liệu");
+            var rulesSheet = workbook.getSheet("Quy tắc nhập liệu");
+            var policiesSheet = workbook.getSheet("Danh mục chính sách");
+            assertThat(rulesSheet).isNotNull();
+            assertThat(policiesSheet).isNotNull();
+            assertThat(workbook.getName("activeWelfarePolicyChoices")).isNotNull();
+            assertThat(policiesSheet.getRow(3).getCell(0).getStringCellValue()).startsWith(activePolicy.getCode() + " — ");
+            for (int rowIndex = 3; rowIndex <= policiesSheet.getLastRowNum(); rowIndex++) {
+                assertThat(policiesSheet.getRow(rowIndex).getCell(1).getStringCellValue()).isNotEqualTo(inactivePolicy.getCode());
+            }
+            int policyColumn = columnIndex(dataSheet, "Chính sách chăm lo");
+            assertThat(policyColumn).isGreaterThanOrEqualTo(0);
+            assertThat(dataSheet.getDataValidations()).anySatisfy(validation ->
+                    assertThat(validation.getValidationConstraint().getFormula1()).isEqualTo("activeWelfarePolicyChoices"));
+            assertThat(rulesSheet.getRow(3).getCell(1).getStringCellValue()).isEqualTo("Chọn chính sách");
+        }
+    }
+
+    @Test
+    void importsTheFormerWelfareTemplateWithoutASelectedPolicy() throws Exception {
+        byte[] input;
+        try (var workbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
+            var sheet = workbook.createSheet("Dữ liệu");
+            String[] headers = {"Mã hồ sơ", "Loại chăm lo", "Tên chính sách / định mức áp dụng", "Mã CĐCS",
+                    "Người thụ hưởng", "Ngày sự kiện", "Hạn hoàn tất", "Trạng thái xử lý", "Số tiền", "Định mức",
+                    "Tình trạng hồ sơ", "Tình trạng biên nhận", "Có hình ảnh", "Ghi chú"};
+            var header = sheet.createRow(0);
+            for (int index = 0; index < headers.length; index++) header.createCell(index).setCellValue(headers[index]);
+            var row = sheet.createRow(1);
+            String[] values = {"XLS-LEGACY-WELFARE", "VISIT", "Chăm lo cũ", "VCS", "Đoàn viên cũ", "2026-03-01",
+                    "2026-03-08", "COMPLETED", "250000", "200000", "COMPLETE", "COMPLETE", "TRUE", "File cũ"};
+            for (int index = 0; index < values.length; index++) row.createCell(index).setCellValue(values[index]);
+            workbook.write(output);
+            input = output.toByteArray();
+        }
+
+        var result = service.importWorkbook("welfare", new MockMultipartFile("file", "welfare-legacy.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", input));
+
+        assertThat(result.errors()).isEmpty();
+        var imported = welfareRepository.findByRecordCodeIgnoreCase("XLS-LEGACY-WELFARE").orElseThrow();
+        assertThat(imported.getPolicyId()).isNull();
+        assertThat(imported.getPolicyName()).isEqualTo("Chăm lo cũ");
+        assertThat(imported.getAmount()).isEqualByComparingTo("250000");
+    }
+
+    @Test
     void importsAllEditableFieldsAcrossEveryResourceAndWritesAuditRuns() throws Exception {
         assertSuccessful("units", values(
                 "code", "XLS-UNIT", "name", "CĐCS Excel", "companyName", "Công ty Excel",
@@ -85,9 +152,9 @@ class SpreadsheetImportServiceTests {
                 "jobTitle", "Chuyên viên", "workplace", "VP-TCT", "joinDate", "2026-02-01",
                 "membershipStatus", "MEMBER", "employmentStatus", "ACTIVE", "email", "excel@gpg.vn", "phone", "0901234567"));
         assertSuccessful("welfare", values(
-                "recordCode", "XLS-WELFARE", "welfareType", "VISIT", "unitCode", "XLS-UNIT",
+                "recordCode", "XLS-WELFARE", "policyCode", "CD-01-01", "unitCode", "XLS-UNIT",
                 "beneficiaryName", "Người thụ hưởng", "eventDate", "2026-03-01", "status", "COMPLETED",
-                "amount", "250000", "documentStatus", "COMPLETE", "notes", "Nhập đủ trường từ Excel"));
+                "documentStatus", "COMPLETE", "notes", "Nhập đủ trường từ Excel"));
         assertSuccessful("cases", values(
                 "caseCode", "XLS-CASE", "receivedDate", "2026-03-02", "unitCode", "XLS-UNIT",
                 "issueGroup", "Điều kiện làm việc", "severity", "HIGH", "ownerName", "PIC Excel",
@@ -123,6 +190,11 @@ class SpreadsheetImportServiceTests {
         assertThat(unitRepository.findByCodeIgnoreCase("XLS-UNIT")).get().extracting("contactPerson").isEqualTo("Trần Đầu mối");
         assertThat(memberRepository.findByEmployeeCodeIgnoreCase("XLS-MEMBER")).get().extracting("email").isEqualTo("excel@gpg.vn");
         assertThat(welfareRepository.findByRecordCodeIgnoreCase("XLS-WELFARE")).isPresent();
+        var importedWelfare = welfareRepository.findByRecordCodeIgnoreCase("XLS-WELFARE").orElseThrow();
+        WelfarePolicy selectedPolicy = welfarePolicyRepository.findByCodeIgnoreCase("CD-01-01").orElseThrow();
+        assertThat(importedWelfare.getPolicyId()).isEqualTo(selectedPolicy.getId());
+        assertThat(importedWelfare.getWelfareType()).isEqualTo(selectedPolicy.getWelfareType());
+        assertThat(importedWelfare.getAmount()).isEqualByComparingTo(selectedPolicy.getSupportAmount());
         assertThat(caseRepository.findByCaseCodeIgnoreCase("XLS-CASE")).isPresent();
         assertThat(activityRepository.findByActivityCodeIgnoreCase("XLS-ACT")).isPresent();
         assertThat(financeRepository.findByEntryCodeIgnoreCase("XLS-FIN")).isPresent();
@@ -252,6 +324,13 @@ class SpreadsheetImportServiceTests {
         var result = new LinkedHashMap<String, String>();
         for (int index = 0; index < pairs.length; index += 2) result.put(pairs[index], pairs[index + 1]);
         return result;
+    }
+
+    private int columnIndex(org.apache.poi.ss.usermodel.Sheet sheet, String headerText) {
+        for (var cell : sheet.getRow(0)) {
+            if (headerText.equals(cell.getStringCellValue())) return cell.getColumnIndex();
+        }
+        return -1;
     }
 
     private void authenticateUserForUnit(Long unitId) {

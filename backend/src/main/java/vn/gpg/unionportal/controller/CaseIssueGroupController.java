@@ -3,24 +3,24 @@ package vn.gpg.unionportal.controller;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import vn.gpg.unionportal.dto.ApiModels.CaseIssueGroupRequest;
 import vn.gpg.unionportal.dto.ApiModels.ListFacets;
 import vn.gpg.unionportal.dto.ApiModels.PageResponse;
-import vn.gpg.unionportal.dto.ApiModels.WelfareRequest;
 import vn.gpg.unionportal.dto.ListQuery;
-import vn.gpg.unionportal.model.WelfareRecord;
-import vn.gpg.unionportal.service.WelfareService;
+import vn.gpg.unionportal.model.CaseIssueGroup;
+import vn.gpg.unionportal.service.CaseIssueGroupService;
 
 @RestController
-@RequestMapping("/api/welfare")
-public class WelfareController {
-    private final WelfareService service;
+@RequestMapping("/api/case-issue-groups")
+public class CaseIssueGroupController {
+    private final CaseIssueGroupService service;
 
-    public WelfareController(WelfareService service) {
+    public CaseIssueGroupController(CaseIssueGroupService service) {
         this.service = service;
     }
 
     @GetMapping
-    public PageResponse<WelfareRecord> list(@ModelAttribute ListQuery query) {
+    public PageResponse<CaseIssueGroup> list(@ModelAttribute ListQuery query) {
         return PageResponse.from(query, service::page, service::search);
     }
 
@@ -31,23 +31,13 @@ public class WelfareController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public WelfareRecord create(@Valid @RequestBody WelfareRequest request) {
+    public CaseIssueGroup create(@Valid @RequestBody CaseIssueGroupRequest request) {
         return service.create(request);
     }
 
     @PutMapping("/{id}")
-    public WelfareRecord update(@PathVariable Long id, @Valid @RequestBody WelfareRequest request) {
+    public CaseIssueGroup update(@PathVariable Long id, @Valid @RequestBody CaseIssueGroupRequest request) {
         return service.update(id, request);
-    }
-
-    @PostMapping("/{id}/approve")
-    public WelfareRecord approve(@PathVariable Long id) {
-        return service.approve(id);
-    }
-
-    @PostMapping("/{id}/complete")
-    public WelfareRecord complete(@PathVariable Long id) {
-        return service.complete(id);
     }
 
     @DeleteMapping("/{id}")

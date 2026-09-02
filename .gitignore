@@ -1,9 +1,26 @@
 .idea/
 .vscode/
+
+# Temporary files created by local development tools
 .codex-tmp/
-backend/target/
-frontend/node_modules/
-frontend/dist/
+.codex/tmp/
+.codex/cache/
+.codex/logs/
+.cache/
+.tmp/
+tmp/
+temp/
+
+# Generated dependency, build, test, and cache directories
+node_modules/
+target/
+dist/
+coverage/
+.vite/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+
 *.log
 .env
-.gitnexus
+.gitnexus/

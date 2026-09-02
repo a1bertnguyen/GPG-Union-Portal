@@ -14,7 +14,7 @@ type WorkspaceProps = { units: UnionUnit[] }
 export function MemberChangesPage({ units }: WorkspaceProps) {
   const [members, setMembers] = useState<BaseRecord[]>([])
   const [memberId, setMemberId] = useState('')
-  const [changeType, setChangeType] = useState('CẬP NHẬT BIẾN ĐỘNG')
+  const [changeType, setChangeType] = useState('CẬP NHẬT THÔNG TIN')
   const [effectiveDate, setEffectiveDate] = useState(today())
   const [description, setDescription] = useState('')
   const [search, setSearch] = useState('')
@@ -50,7 +50,7 @@ export function MemberChangesPage({ units }: WorkspaceProps) {
       setDescription('')
       await list.reload()
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Không thể ghi nhận biến động')
+      setFormError(err instanceof Error ? err.message : 'Không thể cập nhật thông tin')
     } finally {
       setSaving(false)
     }
@@ -59,22 +59,22 @@ export function MemberChangesPage({ units }: WorkspaceProps) {
   const error = formError || list.error
 
   return <section className="page-section">
-    <div className="page-heading"><div><p className="eyebrow">Đoàn viên / Dashboard con</p><h1>Biến động đoàn viên</h1><p>Ghi nhận thay đổi nhân sự, tình trạng công đoàn và lịch sử cập nhật theo từng đoàn viên.</p></div></div>
+    <div className="page-heading"><div><p className="eyebrow">Đoàn viên / Tổng quan</p><h1>Cập nhật thông tin đoàn viên</h1><p>Ghi nhận thay đổi nhân sự, tình trạng công đoàn và lịch sử cập nhật theo từng đoàn viên.</p></div></div>
     {error && <div className="alert alert--danger">{error}</div>}
     <div className="workspace-grid">
       <form className="data-card compact-form-card" onSubmit={event => void submit(event)}>
-        <div><p className="eyebrow">Cập nhật biến động</p><h2>Ghi nhận thay đổi mới</h2></div>
+        <div><p className="eyebrow">Cập nhật thông tin</p><h2>Ghi nhận thay đổi mới</h2></div>
         <label className="field"><span>Đoàn viên *</span><select required value={memberId} onChange={event => setMemberId(event.target.value)}><option value="">Chọn đoàn viên…</option>{members.map(member => <option key={member.id} value={member.id}>{String(member.employeeCode)} · {String(member.fullName)}</option>)}</select></label>
-        <label className="field"><span>Loại biến động *</span><select required value={changeType} onChange={event => setChangeType(event.target.value)}><option>CẬP NHẬT BIẾN ĐỘNG</option><option>THAY ĐỔI ĐƠN VỊ</option><option>THAY ĐỔI CHỨC DANH</option><option>THAY ĐỔI TRẠNG THÁI</option><option>RỜI CÔNG ĐOÀN</option></select></label>
+        <label className="field"><span>Loại cập nhật *</span><select required value={changeType} onChange={event => setChangeType(event.target.value)}><option>CẬP NHẬT THÔNG TIN</option><option>THAY ĐỔI ĐƠN VỊ</option><option>THAY ĐỔI CHỨC DANH</option><option>THAY ĐỔI TRẠNG THÁI</option><option>RỜI CÔNG ĐOÀN</option></select></label>
         <label className="field"><span>Ngày hiệu lực *</span><input type="date" required value={effectiveDate} onChange={event => setEffectiveDate(event.target.value)} /></label>
         <label className="field"><span>Nội dung *</span><textarea required value={description} onChange={event => setDescription(event.target.value)} placeholder="Mô tả nội dung trước/sau hoặc lý do thay đổi…" /></label>
-        <button className="button button--primary" disabled={saving}>{saving ? 'Đang lưu…' : 'Lưu biến động'}</button>
+        <button className="button button--primary" disabled={saving}>{saving ? 'Đang lưu…' : 'Lưu cập nhật'}</button>
       </form>
 
       <ListCard
         list={list}
-        unit="biến động"
-        title={`${list.total} biến động`}
+        unit="lần cập nhật"
+        title={`${list.total} lần cập nhật`}
         subtitle={list.total === list.facets.total ? undefined : `Trên tổng ${list.facets.total}`}
         actions={<>
           {filtersActive && <button className="button button--ghost" onClick={() => { setSearch(''); setUnitFilter('') }}>Xóa lọc</button>}
@@ -89,7 +89,7 @@ export function MemberChangesPage({ units }: WorkspaceProps) {
           ? <div className="empty-state">Đang tải lịch sử…</div>
           : list.rows.length
             ? <div className="timeline-list">{list.rows.map(change => <article key={change.id}><i /><div><strong>{change.changeType}</strong><span>{change.employeeCode} · {change.memberName} · {change.unionUnit.code}</span><p>{change.description}</p></div><time>{formatDate(change.effectiveDate)}</time></article>)}</div>
-            : <div className="empty-state">Chưa có biến động phù hợp.</div>}
+            : <div className="empty-state">Chưa có cập nhật thông tin phù hợp.</div>}
       </ListCard>
     </div>
   </section>
@@ -98,6 +98,8 @@ export function MemberChangesPage({ units }: WorkspaceProps) {
 export function MemberDocumentsPage({ units }: WorkspaceProps) {
   const [members, setMembers] = useState<BaseRecord[]>([])
   const [memberId, setMemberId] = useState('')
+  const [memberSearch, setMemberSearch] = useState('')
+  const [memberSuggestionsOpen, setMemberSuggestionsOpen] = useState(false)
   const [documentType, setDocumentType] = useState<(typeof documentTypes)[number]>('JOIN_APPLICATION')
   const [file, setFile] = useState<File | null>(null)
   const [fileInputKey, setFileInputKey] = useState(0)
@@ -127,9 +129,26 @@ export function MemberDocumentsPage({ units }: WorkspaceProps) {
   // oxlint-disable-next-line react/set-state-in-effect
   useEffect(() => { void loadMembers() }, [loadMembers])
 
+  const matchingMembers = useMemo(() => {
+    const needle = memberSearch.trim().toLocaleLowerCase('vi')
+    if (!needle) return members
+    return members.filter(member => `${String(member.employeeCode ?? '')} ${String(member.fullName ?? '')}`
+      .toLocaleLowerCase('vi').includes(needle))
+  }, [memberSearch, members])
+
+  const selectMember = (member: BaseRecord) => {
+    setMemberId(String(member.id))
+    setMemberSearch(`${String(member.employeeCode ?? '')} · ${String(member.fullName ?? '')}`)
+    setMemberSuggestionsOpen(false)
+  }
+
   const upload = async (event: FormEvent) => {
     event.preventDefault()
     if (!file) return
+    if (!memberId) {
+      setActionError('Hãy chọn một đoàn viên từ danh sách gợi ý trước khi tải tệp')
+      return
+    }
     setSaving(true)
     setActionError('')
     const body = new FormData()
@@ -161,11 +180,24 @@ export function MemberDocumentsPage({ units }: WorkspaceProps) {
   const error = actionError || list.error
 
   return <section className="page-section">
-    <div className="page-heading"><div><p className="eyebrow">Đoàn viên / Dashboard con</p><h1>Tài liệu đoàn viên</h1><p>Kiểm tra ba hồ sơ bắt buộc: Đơn gia nhập, Quyết định và Tài liệu BCH.</p></div></div>
+    <div className="page-heading"><div><p className="eyebrow">Đoàn viên / Tổng quan</p><h1>Tài liệu đoàn viên</h1><p>Tìm đoàn viên theo mã NV hoặc tên, rồi tải Đơn gia nhập, Quyết định và Tài liệu BCH.</p></div></div>
     {error && <div className="alert alert--danger">{error}</div>}
     <form className="data-card upload-strip" onSubmit={event => void upload(event)}>
       <div><p className="eyebrow">Bổ sung hồ sơ</p><strong>Tải tài liệu vào hồ sơ đoàn viên</strong></div>
-      <select required value={memberId} onChange={event => setMemberId(event.target.value)}><option value="">Chọn đoàn viên…</option>{members.map(member => <option key={member.id} value={member.id}>{String(member.employeeCode)} · {String(member.fullName)}</option>)}</select>
+      <div className="member-document-picker">
+        <input required value={memberSearch} placeholder="Tìm mã NV hoặc tên đoàn viên…" autoComplete="off" aria-autocomplete="list" aria-expanded={memberSuggestionsOpen}
+          onFocus={() => setMemberSuggestionsOpen(true)} onBlur={() => setMemberSuggestionsOpen(false)}
+          onChange={event => {
+            const next = event.target.value
+            setMemberSearch(next)
+            const exact = members.find(member => String(member.employeeCode ?? '').toLocaleLowerCase('vi') === next.trim().toLocaleLowerCase('vi'))
+            setMemberId(exact ? String(exact.id) : '')
+            setMemberSuggestionsOpen(true)
+          }} />
+        {memberSuggestionsOpen && <div className="member-document-suggestions" role="listbox">
+          {matchingMembers.length ? matchingMembers.slice(0, 8).map(member => <button type="button" role="option" key={member.id} onMouseDown={event => event.preventDefault()} onClick={() => selectMember(member)}><strong>{String(member.employeeCode ?? '')}</strong><span>{String(member.fullName ?? '')} · {member.unionUnit?.code ?? '—'}</span></button>) : <span>Không tìm thấy đoàn viên phù hợp.</span>}
+        </div>}
+      </div>
       <select value={documentType} onChange={event => setDocumentType(event.target.value as typeof documentType)}>{documentTypes.map(type => <option key={type} value={type}>{enumLabel(type)}</option>)}</select>
       <input key={fileInputKey} aria-label="Chọn tài liệu" type="file" accept=".pdf,.doc,.docx,image/*" required onChange={event => setFile(event.target.files?.[0] ?? null)} />
       <button className="button button--primary" disabled={saving}>{saving ? 'Đang tải…' : 'Tải lên'}</button>
@@ -300,7 +332,7 @@ export function MemberDetailPanel({ member, refreshMembers }: { member: BaseReco
       <div className="required-docs required-docs--horizontal">{documentTypes.map(type => { const doc = documents.find(item => item.documentType === type); return <div key={type} className={doc ? 'required-doc required-doc--done' : 'required-doc'}><span>{doc ? '✓' : '!'}</span><div><strong>{enumLabel(type)}</strong>{doc ? <div className="required-doc__actions"><button type="button" onClick={() => void downloadFile(`/member-documents/${doc.id}/download`, doc.fileName)}>{doc.fileName}</button><button type="button" className="icon-button icon-button--danger" onClick={() => void removeDocument(doc)}>Xóa</button></div> : <small>Bắt buộc · chưa có</small>}</div></div> })}</div>
       <form className="inline-upload" onSubmit={event => void upload(event)}><select value={documentType} onChange={event => setDocumentType(event.target.value as typeof documentType)}>{documentTypes.map(type => <option key={type} value={type}>{enumLabel(type)}</option>)}</select><input type="file" required accept=".pdf,.doc,.docx,image/*" onChange={event => setFile(event.target.files?.[0] ?? null)} /><button className="button button--primary">Tải tài liệu</button></form>
     </section>
-    <div className="member-history-grid"><section><div className="section-title"><div><p className="eyebrow">Lịch sử</p><h3>Biến động</h3></div></div><div className="compact-history">{changes.length ? changes.slice(0, 6).map(change => <article key={change.id}><strong>{change.changeType}</strong><span>{formatDate(change.effectiveDate)} · {change.description}</span></article>) : <p>Chưa có biến động.</p>}</div></section>
+    <div className="member-history-grid"><section><div className="section-title"><div><p className="eyebrow">Lịch sử</p><h3>Cập nhật thông tin</h3></div></div><div className="compact-history">{changes.length ? changes.slice(0, 6).map(change => <article key={change.id}><strong>{change.changeType}</strong><span>{formatDate(change.effectiveDate)} · {change.description}</span></article>) : <p>Chưa có cập nhật thông tin.</p>}</div></section>
       <section><div className="section-title"><div><p className="eyebrow">Lịch sử</p><h3>Chính sách / hoạt động</h3></div></div><div className="compact-history">{welfare.map(item => <article key={`w-${item.id}`}><strong>{enumLabel(item.welfareType)}</strong><span>{formatDate(item.eventDate)} · {enumLabel(item.status)}</span></article>)}{activities.slice(0, 4).map(item => <article key={`a-${item.id}`}><strong>{String(item.name)}</strong><span>{formatDate(item.eventDate)} · {enumLabel(item.status)}</span></article>)}{!welfare.length && !activities.length && <p>Chưa có lịch sử liên quan.</p>}</div></section>
     </div>
   </div>

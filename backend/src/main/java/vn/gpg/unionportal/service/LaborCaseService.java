@@ -17,6 +17,7 @@ import vn.gpg.unionportal.model.DomainEnums.CaseSeverity;
 import vn.gpg.unionportal.model.DomainEnums.CaseStatus;
 import vn.gpg.unionportal.model.LaborCase;
 import vn.gpg.unionportal.repository.LaborCaseRepository;
+import vn.gpg.unionportal.repository.LaborCaseDocumentRepository;
 import vn.gpg.unionportal.spec.LaborCaseSpecs;
 import vn.gpg.unionportal.spec.SpecAggregates;
 import vn.gpg.unionportal.spec.Specs;
@@ -35,14 +36,17 @@ public class LaborCaseService {
     private static final int WIDE_IMPACT_THRESHOLD = 10;
 
     private final LaborCaseRepository repository;
+    private final LaborCaseDocumentRepository documents;
     private final EntityMapper mapper;
     private final CurrentUserService currentUser;
     private final RealtimeEventPublisher events;
     private final SpecAggregates aggregates;
 
-    public LaborCaseService(LaborCaseRepository repository, EntityMapper mapper, CurrentUserService currentUser,
+    public LaborCaseService(LaborCaseRepository repository, LaborCaseDocumentRepository documents,
+                            EntityMapper mapper, CurrentUserService currentUser,
                             RealtimeEventPublisher events, SpecAggregates aggregates) {
         this.repository = repository;
+        this.documents = documents;
         this.mapper = mapper;
         this.currentUser = currentUser;
         this.events = events;
@@ -126,7 +130,7 @@ public class LaborCaseService {
         LaborCaseRequest normalized = request;
         if (!currentUser.isAdmin()) {
             if (entity.getStatus() == CaseStatus.PENDING_APPROVAL || entity.getStatus() == CaseStatus.CLOSED) {
-                throw new AccessDeniedException("USER không thể sửa vụ việc đang chờ duyệt hoặc đã đóng");
+                throw new AccessDeniedException("USER không thể sửa kiến nghị đang chờ duyệt hoặc đã đóng");
             }
             if (request.status() == CaseStatus.PENDING_APPROVAL || request.status() == CaseStatus.CLOSED) {
                 throw new AccessDeniedException("USER phải dùng nút Gửi ADMIN duyệt để hoàn tất xử lý");
@@ -164,10 +168,10 @@ public class LaborCaseService {
         var entity = findById(id);
         currentUser.requireUnitAccess(entity.getUnionUnit().getId());
         if (entity.getStatus() == CaseStatus.PENDING_APPROVAL) {
-            throw new IllegalArgumentException("Vụ việc đã được gửi và đang chờ ADMIN duyệt");
+            throw new IllegalArgumentException("Kiến nghị đã được gửi và đang chờ ADMIN duyệt");
         }
         if (entity.getStatus() == CaseStatus.CLOSED) {
-            throw new IllegalArgumentException("Vụ việc đã đóng");
+            throw new IllegalArgumentException("Kiến nghị đã đóng");
         }
         if (entity.getStatus() != CaseStatus.IN_PROGRESS && entity.getStatus() != CaseStatus.WAITING_RESPONSE) {
             throw new IllegalArgumentException("ADMIN phải duyệt tiếp nhận và giao PIC/deadline trước khi USER nộp kết quả");
@@ -178,8 +182,9 @@ public class LaborCaseService {
         if (entity.getResultText() == null || entity.getResultText().isBlank()) {
             throw new IllegalArgumentException("Cần cập nhật Kết quả / phản hồi trước khi gửi ADMIN duyệt");
         }
-        if (entity.getAttachmentNote() == null || entity.getAttachmentNote().isBlank()) {
-            throw new IllegalArgumentException("Cần cập nhật Tài liệu đính kèm kết quả trước khi gửi ADMIN duyệt");
+        if (!documents.existsByLaborCaseId(entity.getId())
+                && (entity.getAttachmentNote() == null || entity.getAttachmentNote().isBlank())) {
+            throw new IllegalArgumentException("Cần tải Tài liệu đính kèm hoặc ghi chú liên kết trước khi gửi ADMIN duyệt");
         }
         requireOverdueDetails(entity.getDeadline(), entity.getStatus(), entity.getOverdueReason());
         entity.setStatus(CaseStatus.PENDING_APPROVAL);
@@ -197,12 +202,12 @@ public class LaborCaseService {
     @Transactional
     public LaborCase approve(Long id, CaseApprovalRequest approval) {
         if (!currentUser.isAdmin()) {
-            throw new AccessDeniedException("Chỉ ADMIN được duyệt kết quả xử lý vụ việc");
+            throw new AccessDeniedException("Chỉ ADMIN được duyệt kết quả xử lý kiến nghị");
         }
         var entity = findById(id);
         if (entity.getStatus() == CaseStatus.NEW) {
             if (approval == null) {
-                throw new IllegalArgumentException("ADMIN cần chọn PIC và deadline khi duyệt tiếp nhận vụ việc");
+                throw new IllegalArgumentException("ADMIN cần chọn PIC và deadline khi duyệt tiếp nhận kiến nghị");
             }
             if (approval.deadline().isBefore(LocalDate.now())) {
                 throw new IllegalArgumentException("Deadline xử lý không được trước ngày duyệt");
@@ -215,7 +220,7 @@ public class LaborCaseService {
             return assigned;
         }
         if (entity.getStatus() != CaseStatus.PENDING_APPROVAL) {
-            throw new IllegalArgumentException("Chỉ có thể duyệt vụ việc mới hoặc kết quả đang chờ duyệt");
+            throw new IllegalArgumentException("Chỉ có thể duyệt kiến nghị mới hoặc kết quả đang chờ duyệt");
         }
         requireOverdueDetails(entity.getDeadline(), entity.getStatus(), entity.getOverdueReason());
         entity.setStatus(CaseStatus.CLOSED);
@@ -229,7 +234,7 @@ public class LaborCaseService {
 
     private LaborCase findById(Long id) {
         return repository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy vụ việc với id=" + id));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy kiến nghị với id=" + id));
     }
 
     private LaborCaseRequest withAssignment(LaborCaseRequest request, String ownerName, LocalDate deadline,
@@ -245,7 +250,7 @@ public class LaborCaseService {
     private void requireOverdueDetails(LocalDate deadline, CaseStatus status, String overdueReason) {
         if (deadline != null && status != CaseStatus.CLOSED && deadline.isBefore(LocalDate.now())
                 && (overdueReason == null || overdueReason.isBlank())) {
-            throw new IllegalArgumentException("Vụ việc quá hạn phải có Lý do quá hạn / ETA mới");
+            throw new IllegalArgumentException("Kiến nghị quá hạn phải có Lý do quá hạn / ETA mới");
         }
     }
 }

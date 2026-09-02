@@ -48,8 +48,8 @@ const MOCK_PROFILES = [
 
 const CATEGORY_META = [
   { code: 'WELFARE', label: 'Chăm lo & phúc lợi', description: 'Hồ sơ đúng hạn, đủ chứng từ', target: 90, offset: 5 },
-  { code: 'CASES', label: 'Vụ việc & kiến nghị', description: 'Phản hồi đúng SLA, có PIC xử lý', target: 85, offset: -3 },
-  { code: 'ACTIVITIES', label: 'Hoạt động công đoàn', description: 'Tỷ lệ tham gia và mức hữu ích', target: 80, offset: 2 },
+  { code: 'CASES', label: 'Kiến nghị', description: 'Xử lý đúng SLA, có PIC xử lý', target: 85, offset: -3 },
+  { code: 'ACTIVITIES', label: 'Chương trình công đoàn', description: 'Tỷ lệ tham gia và mức hữu ích', target: 80, offset: 2 },
   { code: 'MEMBERS', label: 'Dữ liệu đoàn viên', description: 'Hồ sơ đầy đủ và cập nhật', target: 95, offset: 4 },
   { code: 'SURVEYS', label: 'Khảo sát & lắng nghe', description: 'Tỷ lệ phản hồi người lao động', target: 75, offset: -7 },
   { code: 'REPORTS', label: 'Báo cáo & tuân thủ', description: 'Nộp báo cáo đúng kỳ, đủ minh chứng', target: 90, offset: 1 },

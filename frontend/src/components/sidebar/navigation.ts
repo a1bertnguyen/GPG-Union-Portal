@@ -13,6 +13,7 @@ export type PageKey =
   | 'welfarePolicies'
   | 'welfareDocuments'
   | 'cases'
+  | 'caseIssueGroups'
   | 'caseReports'
   | 'caseAnalytics'
   | 'activities'
@@ -39,29 +40,30 @@ export type SidebarNavGroup = {
 }
 
 export const navGroups: SidebarNavGroup[] = [
-  { label: 'Dashboard', items: [
+  { label: 'Tổng quan', items: [
     { key: 'home', label: 'Trang chủ hôm nay', mark: 'HN', userOnly: true },
     { key: 'dashboard', label: 'Điều hành', mark: 'ĐH', adminOnly: true },
     { key: 'dashboardWelfare', label: 'Chăm lo', mark: 'CL' },
-    { key: 'dashboardCases', label: 'Vụ việc', mark: 'VV' },
-    { key: 'dashboardActivities', label: 'Hoạt động', mark: 'HĐ' },
+    { key: 'dashboardCases', label: 'Kiến nghị', mark: 'KN' },
+    { key: 'dashboardActivities', label: 'Chương trình', mark: 'CT' },
     { key: 'dashboardFinance', label: 'Tài chính', mark: 'TC' },
     { key: 'kpi', label: 'Báo cáo KPI', mark: 'KPI' },
   ] },
   { label: 'Nghiệp vụ', items: [
     { key: 'members', label: 'Đoàn viên', mark: 'ĐV', children: [
-      { key: 'memberChanges', label: 'Biến động', mark: 'BĐ' },
+      { key: 'memberChanges', label: 'Cập nhật thông tin', mark: 'CN' },
       { key: 'memberDocuments', label: 'Tài liệu', mark: 'TL' },
     ] },
     { key: 'welfare', label: 'Chăm lo', mark: 'CL', children: [
       { key: 'welfarePolicies', label: 'Chính sách', mark: 'CS' },
       { key: 'welfareDocuments', label: 'Chứng từ', mark: 'CT' },
     ] },
-    { key: 'cases', label: 'Vụ việc', mark: 'VV', children: [
+    { key: 'cases', label: 'Kiến nghị', mark: 'KN', children: [
+      { key: 'caseIssueGroups', label: 'Nhóm vấn đề', mark: 'NV', adminOnly: true },
       { key: 'caseReports', label: 'Báo cáo', mark: 'BC' },
       { key: 'caseAnalytics', label: 'Phân tích', mark: 'PT' },
     ] },
-    { key: 'activities', label: 'Hoạt động', mark: 'HĐ', children: [
+    { key: 'activities', label: 'Chương trình', mark: 'CT', children: [
       { key: 'activityReports', label: 'Báo cáo chương trình', mark: 'BC' },
       { key: 'activityGallery', label: 'Ảnh & tài liệu báo cáo', mark: 'TL' },
     ] },

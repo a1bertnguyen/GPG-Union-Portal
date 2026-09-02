@@ -72,6 +72,11 @@ type ReportForm = {
 
 const value = (input: unknown) => input == null ? '' : String(input)
 const normalizeSearch = (input: unknown) => value(input).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('vi').replace(/đ/g, 'd')
+const numericValue = (input: string) => Number(input.replaceAll(',', '').replaceAll(' ', '') || 0)
+const moneyInput = (input: string) => {
+  const raw = input.replaceAll(',', '').replaceAll(' ', '')
+  return !raw || Number.isNaN(Number(raw)) ? raw : new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(Number(raw))
+}
 
 const toForm = (item: ProgramReport): ReportForm => ({
   name: value(item.name), eventDate: value(item.eventDate), eventTime: value(item.eventTime).slice(0, 5),
@@ -92,7 +97,7 @@ const toForm = (item: ProgramReport): ReportForm => ({
 const requiredText: Array<[keyof ReportForm, string]> = [
   ['eventTime', 'Giờ tổ chức'], ['location', 'Địa điểm'], ['programPic', 'PIC chương trình'],
   ['objective', 'Mục tiêu'], ['employeeGroup', 'Nhóm NLĐ'], ['actualContent', 'Nội dung thực tế'],
-  ['planDifference', 'Khác biệt so kế hoạch'], ['quickFeedback', 'Phản hồi'], ['issues', 'Vấn đề ghi nhận'],
+  ['planDifference', 'Khác biệt so kế hoạch'], ['quickFeedback', 'Báo cáo'], ['issues', 'Vấn đề ghi nhận'],
   ['outputProposal', 'Đề xuất'], ['communicationContent', 'Nội dung truyền thông'],
   ['participantList', 'Danh sách tham dự'], ['usefulnessScore', 'Điểm hữu ích'],
   ['strengths', 'Điều làm tốt'], ['weaknesses', 'Điều chưa tốt'], ['lessonsLearned', 'Bài học'],
@@ -225,7 +230,7 @@ export default function ActivityReportsPage({ isAdmin }: { isAdmin: boolean }) {
       activityCode: selected.activityCode, name: form.name.trim(), unionUnitId: selected.unionUnit.id,
       eventDate: form.eventDate, eventTime: form.eventTime || null, location: form.location || null,
       programPic: form.programPic || null, status, objective: form.objective || null,
-      plannedBudget: Number(form.plannedBudget || 0), actualCost: Number(form.actualCost || 0),
+      plannedBudget: numericValue(form.plannedBudget), actualCost: numericValue(form.actualCost),
       invitedCount: Number(form.invitedCount || 0), participantCount: Number(form.participantCount || 0),
       participantList: form.participantList || null, employeeGroup: form.employeeGroup || null,
       checkInCount: Number(form.checkInCount || 0), actualContent: form.actualContent || null,
@@ -269,7 +274,7 @@ export default function ActivityReportsPage({ isAdmin }: { isAdmin: boolean }) {
     const body = new FormData()
     body.append('activityId', String(selected.id))
     body.append('mediaType', mediaType)
-    body.append('title', mediaType === 'PHOTO' ? 'Ảnh báo cáo chương trình' : 'Chứng từ báo cáo chương trình')
+    body.append('title', mediaType === 'PHOTO' ? 'Ảnh báo cáo chương trình' : 'Tài liệu / danh sách tham gia')
     body.append('file', file)
     try {
       await api('/activity-media', { method: 'POST', body })
@@ -279,7 +284,7 @@ export default function ActivityReportsPage({ isAdmin }: { isAdmin: boolean }) {
       else {
         setDocument(null)
         setDocumentKey(key => key + 1)
-        setForm(current => current ? { ...current, documentStatus: 'COMPLETE' } : current)
+        setForm(current => current ? { ...current, documentStatus: 'COMPLETE', participantList: file.name } : current)
       }
       setMessage(mediaType === 'PHOTO' ? 'Đã tải ảnh chương trình.' : 'Đã tải chứng từ chương trình.')
     } catch (err) {
@@ -293,7 +298,7 @@ export default function ActivityReportsPage({ isAdmin }: { isAdmin: boolean }) {
 
   return <section className="page-section activity-report-page">
     <div className="page-heading">
-      <div><p className="eyebrow">Hoạt động / Báo cáo chương trình</p><h1>{isAdmin ? 'Xem báo cáo chương trình' : 'Nộp báo cáo chương trình'}</h1><p>{isAdmin ? 'Xem nội dung, KPI và chứng cứ do các CĐCS gửi về.' : 'Hoàn thiện 8 nhóm nội dung, chứng cứ bắt buộc và KPI trước khi nộp hoặc đóng chương trình.'}</p></div>
+      <div><h1>{isAdmin ? 'Xem báo cáo sau chương trình' : 'Nộp báo cáo sau chương trình'}</h1></div>
       <div className="report-program-controls">
         <div className="report-program-search">
           <label className="report-program-picker"><span>Tìm báo cáo</span><input value={reportSearch} onFocus={() => setSearchOpen(true)} onBlur={() => setSearchOpen(false)} onChange={event => { setReportSearch(event.target.value); setSearchOpen(true) }} onKeyDown={event => {
@@ -308,7 +313,9 @@ export default function ActivityReportsPage({ isAdmin }: { isAdmin: boolean }) {
             </button>) : <div className="report-program-suggestions__empty">Không tìm thấy chương trình phù hợp.</div>}
           </div>}
         </div>
-        <label className="report-program-picker"><span>Chương trình · {matchingActivities.length}/{activities.length}</span><select value={selectedId} onChange={event => chooseActivity(event.target.value)}><option value="">Chọn chương trình…</option>{visibleActivities.map(item => <option key={item.id} value={item.id}>{item.activityCode} · {item.name}{isAdmin ? ` · ${item.unionUnit.code} · ${item.reportCompleted ? 'Đã nộp' : 'Chưa nộp'}` : ''}</option>)}</select></label>
+        <label className="report-program-picker"><span>Chương trình</span><select value={selectedId} onChange={event => chooseActivity(event.target.value)}><option value="">Chọn chương trình…</option>{visibleActivities.map(item => <option key={item.id} value={item.id}>{item.activityCode} · {item.name}{isAdmin ? ` · ${item.unionUnit.code} · ${item.reportCompleted ? 'Đã nộp' : 'Chưa nộp'}` : ''}</option>)}</select></label>
+        {selected && <button type="button" className="button button--ghost" onClick={() => void downloadFile(`/spreadsheets/activity-reports/${selected.id}/export.xlsx`, `bao-cao-sau-chuong-trinh-${selected.activityCode}.xlsx`)
+          .catch(err => setError(err instanceof Error ? err.message : 'Không thể xuất báo cáo sau chương trình'))}>Xuất Excel</button>}
       </div>
     </div>
 
@@ -330,7 +337,7 @@ export default function ActivityReportsPage({ isAdmin }: { isAdmin: boolean }) {
 
       <form className="activity-report-form" onSubmit={event => event.preventDefault()}>
         <fieldset disabled={isAdmin}>
-        <section className="data-card report-section"><header><b>1</b><div><h2>Thông tin chương trình</h2><p>Tên • mục tiêu • đơn vị • ngày/giờ • địa điểm • PIC</p></div></header><div className="form-grid">
+        <section className="data-card report-section"><header><b>1</b><div><h2>Thông tin chương trình</h2></div></header><div className="form-grid">
           <FormField label="Tên chương trình *"><input value={form.name} onChange={set('name')} /></FormField>
           <FormField label="Đơn vị"><input readOnly value={`${selected.unionUnit.code} · ${selected.unionUnit.name}`} /></FormField>
           <FormField label="Ngày tổ chức *"><input type="date" value={form.eventDate} onChange={set('eventDate')} /></FormField>
@@ -340,48 +347,46 @@ export default function ActivityReportsPage({ isAdmin }: { isAdmin: boolean }) {
           <FormField label="Mục tiêu *" wide><textarea value={form.objective} onChange={set('objective')} /></FormField>
         </div></section>
 
-        <section className="data-card report-section"><header><b>2</b><div><h2>Quy mô & đối tượng</h2><p>Số mời • số tham dự • tỷ lệ tham gia • nhóm NLĐ</p></div></header><div className="form-grid">
+        <section className="data-card report-section"><header><b>2</b><div><h2>Quy mô & đối tượng</h2></div></header><div className="form-grid">
           <FormField label="Số người mời *"><input type="number" min="0" value={form.invitedCount} onChange={set('invitedCount')} /></FormField>
           <FormField label="Số người tham dự *"><input type="number" min="0" value={form.participantCount} onChange={set('participantCount')} /></FormField>
-          <FormField label="Số người check-in"><input type="number" min="0" value={form.checkInCount} onChange={set('checkInCount')} /></FormField>
           <FormField label="Tỷ lệ tham gia"><input readOnly value={`${participationRate.toFixed(1)}%`} /></FormField>
           <FormField label="Nhóm NLĐ / đối tượng *" wide><textarea value={form.employeeGroup} onChange={set('employeeGroup')} /></FormField>
         </div></section>
 
-        <section className="data-card report-section"><header><b>3</b><div><h2>Nội dung thực tế</h2><p>Các nội dung đã triển khai • khác biệt so kế hoạch</p></div></header><div className="form-grid">
+        <section className="data-card report-section"><header><b>3</b><div><h2>Nội dung thực tế</h2></div></header><div className="form-grid">
           <FormField label="Nội dung đã triển khai *" wide><textarea value={form.actualContent} onChange={set('actualContent')} /></FormField>
           <FormField label="Khác biệt so với kế hoạch *" wide><textarea value={form.planDifference} onChange={set('planDifference')} placeholder="Ghi ‘Không có’ nếu triển khai đúng kế hoạch." /></FormField>
         </div></section>
 
-        <section className="data-card report-section"><header><b>4</b><div><h2>Kết quả đầu ra</h2><p>Số NLĐ được tiếp cận • phản hồi • vấn đề ghi nhận • đề xuất</p></div></header><div className="form-grid">
-          <FormField label="Số NLĐ được tiếp cận *"><input type="number" min="0" value={form.workersReached} onChange={set('workersReached')} /></FormField>
-          <FormField label="Phản hồi *"><textarea value={form.quickFeedback} onChange={set('quickFeedback')} /></FormField>
+        <section className="data-card report-section"><header><b>4</b><div><h2>Kết quả đầu ra</h2></div></header><div className="form-grid">
+          <FormField label="Số lượng người lao động tham gia chương trình *"><input type="number" min="0" value={form.workersReached} onChange={set('workersReached')} /></FormField>
+          <FormField label="Báo cáo *"><textarea value={form.quickFeedback} onChange={set('quickFeedback')} placeholder={'Tỉ lệ đạt\nTỉ lệ người tham gia đạt\nNội dung báo cáo'} /></FormField>
           <FormField label="Vấn đề ghi nhận *"><textarea value={form.issues} onChange={set('issues')} placeholder="Ghi ‘Không phát sinh’ nếu không có." /></FormField>
           <FormField label="Đề xuất *"><textarea value={form.outputProposal} onChange={set('outputProposal')} /></FormField>
         </div></section>
 
-        <section className="data-card report-section"><header><b>5</b><div><h2>Ngân sách</h2><p>Được duyệt • thực tế • chênh lệch • tình trạng chứng từ</p></div></header><div className="form-grid">
-          <FormField label="Ngân sách được duyệt *"><input type="number" min="0" step="1000" value={form.plannedBudget} onChange={set('plannedBudget')} /></FormField>
-          <FormField label="Chi phí thực tế *"><input type="number" min="0" step="1000" value={form.actualCost} onChange={set('actualCost')} /></FormField>
+        <section className="data-card report-section"><header><b>5</b><div><h2>Ngân sách</h2></div></header><div className="form-grid">
+          <FormField label="Ngân sách được duyệt *"><input type="text" inputMode="decimal" value={moneyInput(form.plannedBudget)} onChange={event => setForm(current => current ? { ...current, plannedBudget: event.target.value.replaceAll(',', '') } : current)} /></FormField>
+          <FormField label="Chi phí thực tế *"><input type="text" inputMode="decimal" value={moneyInput(form.actualCost)} onChange={event => setForm(current => current ? { ...current, actualCost: event.target.value.replaceAll(',', '') } : current)} /></FormField>
           <FormField label="Chênh lệch"><input readOnly value={formatMoney(budgetDifference)} /></FormField>
           <FormField label="Tình trạng chứng từ *"><select value={form.documentStatus} onChange={set('documentStatus')}><option value="INCOMPLETE">Chưa đủ</option><option value="COMPLETE">Đủ</option></select></FormField>
         </div></section>
 
-        <section className="data-card report-section"><header><b>6</b><div><h2>Hình ảnh / tài liệu</h2><p>Ảnh • chứng từ • danh sách tham dự • nội dung truyền thông</p></div></header><div className="form-grid">
-          <FormField label="Danh sách tham dự *" wide><textarea value={form.participantList} onChange={set('participantList')} placeholder="Nhập danh sách hoặc đường dẫn tệp danh sách." /></FormField>
+        <section className="data-card report-section"><header><b>6</b><div><h2>Hình ảnh / tài liệu</h2></div></header><div className="form-grid">
           <FormField label="Nội dung truyền thông *" wide><textarea value={form.communicationContent} onChange={set('communicationContent')} /></FormField>
           <div className={`report-upload-box${photos.length ? ' is-complete' : ''}`}><span>Ảnh chương trình * · {photos.length} tệp</span>{isAdmin ? <div className="report-evidence-files">{photos.length ? photos.map(item => <a href="#" key={item.id} onClick={event => { event.preventDefault(); void downloadFile(`/activity-media/${item.id}/download`, item.fileName) }}>{item.title ?? item.fileName}</a>) : <small>Chưa có ảnh được nộp.</small>}</div> : <><input key={photoKey} type="file" accept="image/*" onChange={event => setPhoto(event.target.files?.[0] ?? null)} /><button type="button" className="button button--ghost" disabled={!photo || Boolean(uploading)} onClick={() => void upload('PHOTO')}>{uploading === 'PHOTO' ? 'Đang tải…' : 'Tải ảnh'}</button></>}</div>
-          <div className={`report-upload-box${documents.length ? ' is-complete' : ''}`}><span>Chứng từ * · {documents.length} tệp</span>{isAdmin ? <div className="report-evidence-files">{documents.length ? documents.map(item => <a href="#" key={item.id} onClick={event => { event.preventDefault(); void downloadFile(`/activity-media/${item.id}/download`, item.fileName) }}>{item.title ?? item.fileName}</a>) : <small>Chưa có chứng từ được nộp.</small>}</div> : <><input key={documentKey} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" onChange={event => setDocument(event.target.files?.[0] ?? null)} /><button type="button" className="button button--ghost" disabled={!document || Boolean(uploading)} onClick={() => void upload('DOCUMENT')}>{uploading === 'DOCUMENT' ? 'Đang tải…' : 'Tải chứng từ'}</button></>}</div>
+          <div className={`report-upload-box${documents.length ? ' is-complete' : ''}`}><span>Tài liệu / danh sách tham gia * · {documents.length} tệp</span>{isAdmin ? <div className="report-evidence-files">{documents.length ? documents.map(item => <a href="#" key={item.id} onClick={event => { event.preventDefault(); void downloadFile(`/activity-media/${item.id}/download`, item.fileName) }}>{item.title ?? item.fileName}</a>) : <small>Chưa có tệp được nộp.</small>}</div> : <><input key={documentKey} type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,image/*" onChange={event => setDocument(event.target.files?.[0] ?? null)} /><button type="button" className="button button--ghost" disabled={!document || Boolean(uploading)} onClick={() => void upload('DOCUMENT')}>{uploading === 'DOCUMENT' ? 'Đang tải…' : 'Tải tệp'}</button></>}</div>
         </div></section>
 
-        <section className="data-card report-section"><header><b>7</b><div><h2>Đánh giá</h2><p>Điểm hài lòng/hữu ích • điều làm tốt • điều chưa tốt • bài học</p></div></header><div className="form-grid">
-          <FormField label="Điểm hữu ích (0–5) *"><input type="number" min="0" max="5" step="0.1" value={form.usefulnessScore} onChange={set('usefulnessScore')} /></FormField>
+        <section className="data-card report-section"><header><b>7</b><div><h2>Đánh giá</h2></div></header><div className="form-grid">
+          <FormField label="Điểm hữu ích (0–5) *"><div className="rating-scale" role="radiogroup" aria-label="Điểm hữu ích">{[0, 1, 2, 3, 4, 5].map(score => <label key={score}><input type="radio" name="usefulnessScore" value={score} checked={form.usefulnessScore === String(score)} onChange={set('usefulnessScore')} /><span>{score}</span></label>)}</div></FormField>
           <FormField label="Điều làm tốt *"><textarea value={form.strengths} onChange={set('strengths')} /></FormField>
           <FormField label="Điều chưa tốt *"><textarea value={form.weaknesses} onChange={set('weaknesses')} /></FormField>
           <FormField label="Bài học *"><textarea value={form.lessonsLearned} onChange={set('lessonsLearned')} /></FormField>
         </div></section>
 
-        <section className="data-card report-section"><header><b>8</b><div><h2>Hành động sau chương trình</h2><p>Vấn đề cần follow-up • PIC • deadline • tình trạng</p></div></header><div className="form-grid">
+        <section className="data-card report-section"><header><b>8</b><div><h2>Hành động sau chương trình</h2></div></header><div className="form-grid">
           <FormField label="Vấn đề cần follow-up *" wide><textarea value={form.followUpIssue} onChange={set('followUpIssue')} placeholder="Ghi ‘Không phát sinh’ nếu không có." /></FormField>
           <FormField label="PIC follow-up (bắt buộc để đóng)"><input value={form.followUpOwner} onChange={set('followUpOwner')} /></FormField>
           <FormField label="Deadline follow-up (bắt buộc để đóng)"><input type="date" value={form.followUpDeadline} onChange={set('followUpDeadline')} /></FormField>
@@ -394,7 +399,7 @@ export default function ActivityReportsPage({ isAdmin }: { isAdmin: boolean }) {
         <strong>Chế độ xem của ADMIN</strong>
         <span>{selected.reportCompleted ? 'Báo cáo này đã được CĐCS nộp. ADMIN có thể xem nội dung và tải chứng cứ, không chỉnh sửa báo cáo của USER.' : 'CĐCS chưa nộp báo cáo này; dữ liệu đang hiển thị là nội dung hiện có.'}</span>
       </div> : <div className="activity-report-submit data-card">
-        <div><strong>Kiểm tra trước khi nộp</strong><span>{reportMissing.length ? `Còn thiếu: ${reportMissing.join(' • ')}` : 'Đủ ảnh • chứng từ • danh sách • phản hồi và nội dung báo cáo.'}</span>{!reportMissing.length && closeMissing.length > 0 && <small>Để đóng chương trình, bổ sung: {closeMissing.join(' • ')}</small>}</div>
+        <div><strong>Kiểm tra trước khi nộp</strong><span>{reportMissing.length ? `Còn thiếu: ${reportMissing.join(' • ')}` : 'Đủ ảnh • tài liệu/danh sách tham gia • báo cáo và nội dung chương trình.'}</span>{!reportMissing.length && closeMissing.length > 0 && <small>Để hoàn thành chương trình, bổ sung: {closeMissing.join(' • ')}</small>}</div>
         <div><button type="button" className="button button--ghost" disabled={saving} onClick={() => void save('draft')}>Lưu nội dung</button><button type="button" className="button button--primary" disabled={saving || reportMissing.length > 0} onClick={() => void save('submit')}>Nộp báo cáo</button><button type="button" className="button button--primary report-close-button" disabled={saving || closeMissing.length > 0} onClick={() => void save('close')}>Đóng chương trình</button></div>
       </div>}
     </>}

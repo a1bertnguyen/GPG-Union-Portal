@@ -103,6 +103,17 @@ export interface LaborCase extends BaseRecord {
   approvedAt?: string
 }
 
+export interface LaborCaseDocument {
+  id: number
+  laborCaseId: number
+  caseCode: string
+  fileName: string
+  contentType: string
+  fileSize: number
+  uploadedBy: string
+  createdAt: string
+}
+
 export interface WelfareDocument {
   id: number
   welfareRecordId: number

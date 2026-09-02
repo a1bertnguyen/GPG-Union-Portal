@@ -36,17 +36,23 @@ export const welfarePolicyColumns: ColumnConfig[] = [
 ]
 
 export const caseColumns: ColumnConfig[] = [
-  { label: 'Mã', render: item => <strong>{text(item, 'caseCode')}</strong> }, { label: 'Mã NV', render: item => text(item, 'employeeCode') },
-  { label: 'Người gửi', render: item => text(item, 'requesterName') }, { label: 'Nơi làm việc', render: item => text(item, 'workplace') },
+  { label: 'Mã', render: item => <strong>{text(item, 'caseCode')}</strong> }, { label: 'Mã NV hỗ trợ', render: item => text(item, 'employeeCode') },
+  { label: 'Người được hỗ trợ', render: item => text(item, 'requesterName') }, { label: 'Nơi làm việc', render: item => text(item, 'workplace') },
   { label: 'Nhóm vấn đề', render: item => text(item, 'issueGroup') }, { label: 'Mức độ', render: item => <StatusBadge value={item.severity} /> },
   { label: 'PIC', render: item => text(item, 'ownerName') }, { label: 'Deadline', render: item => formatDate(item.deadline) },
   { label: 'Trạng thái', render: item => <StatusBadge value={item.status} /> },
 ]
 
+export const caseIssueGroupColumns: ColumnConfig[] = [
+  { label: 'Mã nhóm', render: item => <strong>{text(item, 'code')}</strong> },
+  { label: 'Nhóm vấn đề', render: item => text(item, 'name') },
+  { label: 'Trạng thái', render: item => <StatusBadge value={item.active ? 'ACTIVE' : 'INACTIVE'} /> },
+]
+
 export const activityColumns: ColumnConfig[] = [
   { label: 'Mã', render: item => <strong>{text(item, 'activityCode')}</strong> }, { label: 'Chương trình', render: item => text(item, 'name') },
   { label: 'Đơn vị', render: item => item.unionUnit?.code ?? '—' }, { label: 'Ngày', render: item => formatDate(item.eventDate) },
-  { label: 'Trạng thái', render: item => <StatusBadge value={item.status} /> }, { label: 'Check-in', render: item => `${text(item, 'checkInCount')}/${text(item, 'participantCount')}` },
+  { label: 'Trạng thái', render: item => <StatusBadge value={item.status} /> }, { label: 'Tham dự', render: item => text(item, 'participantCount') },
   { label: 'Chi phí', render: item => formatMoney(item.actualCost as number) }, { label: 'Báo cáo', render: item => item.reportCompleted ? <StatusBadge value="COMPLETE" /> : <StatusBadge value="INCOMPLETE" /> },
 ]
 

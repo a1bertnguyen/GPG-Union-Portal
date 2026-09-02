@@ -60,17 +60,17 @@ export function CasesInsightPage({ units, mode, isAdmin, unitCode }: CommonProps
     {isAdmin
       ? <FilterField label="CĐCS"><select aria-label="Lọc theo CĐCS" value={unitFilter} onChange={event => setUnitFilter(event.target.value)}><option value="">Tất cả</option>{units.map(unit => <option key={unit.id} value={unit.id}>{unit.code}</option>)}</select></FilterField>
       : <FilterField label="CĐCS"><strong>{unitCode ?? 'Đơn vị của tài khoản'}</strong></FilterField>}
-    <FilterField label="Theo dõi"><select aria-label="Lọc nhanh nghiệp vụ" value={tracking} onChange={event => setTracking(event.target.value)}><option value="">Tất cả</option><option value="due24">Đến hạn 24h</option><option value="overdue">Quá hạn</option><option value="repeated">Vụ việc lặp lại</option><option value="many">Ảnh hưởng nhiều NLĐ</option></select></FilterField>
+    <FilterField label="Theo dõi"><select aria-label="Lọc nhanh nghiệp vụ" value={tracking} onChange={event => setTracking(event.target.value)}><option value="">Tất cả</option><option value="due24">Đến hạn 24h</option><option value="overdue">Quá hạn</option><option value="repeated">Kiến nghị lặp lại</option><option value="many">Ảnh hưởng nhiều NLĐ</option></select></FilterField>
     <FilterField label="Tìm kiếm" search><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Mã / nhóm vấn đề / PIC…" /></FilterField>
   </TableFilterBar>
 
   return <section className="page-section">
-    <div className="page-heading"><div><p className="eyebrow">Vụ việc / Dashboard con</p><h1>{mode === 'reports' ? 'Báo cáo vụ việc' : 'Phân tích vụ việc'}</h1><p>{mode === 'reports' ? 'Bảng theo dõi tiến độ đã ẩn tên người lao động; mỗi dòng dùng mã vụ việc duy nhất.' : 'Nhận diện nhóm vấn đề lặp lại, mức ảnh hưởng và điểm nghẽn quá hạn.'}</p></div></div>
+    <div className="page-heading"><div><p className="eyebrow">Kiến nghị / Tổng quan</p><h1>{mode === 'reports' ? 'Báo cáo kiến nghị' : 'Phân tích kiến nghị'}</h1><p>{mode === 'reports' ? 'Bảng theo dõi tiến độ đã ẩn tên người lao động; mỗi dòng dùng mã kiến nghị duy nhất.' : 'Nhận diện nhóm vấn đề lặp lại, mức ảnh hưởng và điểm nghẽn quá hạn.'}</p></div></div>
     {error && <div className="alert alert--danger">{error}</div>}
 
     {Number(metrics.urgentEscalation ?? 0) > 0 && <div className="alert alert--danger case-escalation-alert">
       <strong>Báo ngay CĐ GPG / Ban CSNLĐ</strong>
-      <span>{metrics.urgentEscalation} vụ việc đang mở ảnh hưởng nhiều NLĐ hoặc có rủi ro cao. Không chờ báo cáo tháng.</span>
+      <span>{metrics.urgentEscalation} kiến nghị đang mở ảnh hưởng nhiều NLĐ hoặc có rủi ro cao. Không chờ báo cáo tháng.</span>
     </div>}
 
     <div className="metric-grid metric-grid--compact insight-metrics">
@@ -84,7 +84,7 @@ export function CasesInsightPage({ units, mode, isAdmin, unitCode }: CommonProps
       <div className="workflow-stepper workflow-stepper--case">{['Mới', 'Đang xác minh', 'Đang xử lý', 'Chờ phản hồi', 'Đã đóng'].map((step, index) => <div key={step}><span>{index + 1}</span><strong>{step}</strong></div>)}</div>
       <ListCard
         list={list}
-        title={`${list.total} vụ việc`}
+        title={`${list.total} kiến nghị`}
         subtitle={list.total === list.facets.total ? undefined : `Trên tổng ${list.facets.total}`}
         actions={<>
           {filtersActive && <button className="button button--ghost" onClick={() => { setSearch(''); setUnitFilter(''); setTracking('') }}>Xóa lọc</button>}
@@ -92,9 +92,9 @@ export function CasesInsightPage({ units, mode, isAdmin, unitCode }: CommonProps
         </>}
         filters={filterBar}
       >
-        <div className="table-wrap case-report-table"><table><thead><tr><th>Mã</th><th>Ngày nhận</th><th>Đơn vị</th><th>Nhóm vấn đề</th><th>Mức độ</th><th>PIC</th><th>Deadline</th><th>Trạng thái</th><th>Kết quả / phản hồi</th></tr></thead><tbody>
+        <div className="table-wrap case-report-table"><table><thead><tr><th>Mã</th><th>Ngày nhận</th><th>Đơn vị</th><th>Nhóm vấn đề</th><th>Mức độ</th><th>PIC</th><th>Deadline</th><th>Trạng thái</th><th>Kết quả xử lý</th></tr></thead><tbody>
           {list.loading && <tr><td colSpan={9} className="empty-cell">Đang tải dữ liệu…</td></tr>}
-          {!list.loading && !list.rows.length && <tr><td colSpan={9} className="empty-cell">{filtersActive ? 'Không có vụ việc phù hợp bộ lọc.' : 'Chưa có vụ việc.'}</td></tr>}
+          {!list.loading && !list.rows.length && <tr><td colSpan={9} className="empty-cell">{filtersActive ? 'Không có kiến nghị phù hợp bộ lọc.' : 'Chưa có kiến nghị.'}</td></tr>}
           {!list.loading && list.rows.map(item => {
             const overdue = isOpenCase(item) && String(item.deadline ?? '') < today()
             const escalation = needsImmediateEscalation(item)
@@ -128,7 +128,7 @@ export function CasesInsightPage({ units, mode, isAdmin, unitCode }: CommonProps
         <article className="panel data-card">
           <div className="panel__heading"><div><p className="eyebrow">Cảnh báo phân tích</p><h2>Điểm cần can thiệp</h2></div></div>
           <div className="control-checklist">
-            <div><span>!</span><strong>Vụ việc lặp lại</strong><small>{metrics.repeated ?? 0} hồ sơ thuộc nhóm xuất hiện từ 2 lần</small></div>
+            <div><span>!</span><strong>Kiến nghị lặp lại</strong><small>{metrics.repeated ?? 0} hồ sơ thuộc nhóm xuất hiện từ 2 lần</small></div>
             <div><span>!</span><strong>Quá hạn xử lý</strong><small>{metrics.overdue ?? 0} hồ sơ chưa đóng đã quá deadline</small></div>
             <div><span>!</span><strong>Ảnh hưởng diện rộng</strong><small>{metrics.wideImpact ?? 0} hồ sơ ảnh hưởng từ 10 NLĐ</small></div>
           </div>
@@ -161,7 +161,7 @@ export function WelfareInsightPage({ units, mode }: CommonProps & { mode: 'polic
   ]
 
   return <section className="page-section">
-    <div className="page-heading"><div><p className="eyebrow">Chăm lo / Dashboard con</p><h1>{mode === 'policies' ? 'Chính sách chăm lo' : 'Kiểm soát chứng từ'}</h1><p>{mode === 'policies' ? 'Theo dõi yêu cầu mới, ngày đến hạn và mức chi theo từng chính sách.' : 'Kiểm soát đúng đối tượng, đúng định mức, đúng hạn và đủ hồ sơ thanh toán.'}</p></div></div>
+    <div className="page-heading"><div><p className="eyebrow">Chăm lo / Tổng quan</p><h1>{mode === 'policies' ? 'Chính sách chăm lo' : 'Kiểm soát chứng từ'}</h1><p>{mode === 'policies' ? 'Theo dõi yêu cầu mới, ngày đến hạn và mức chi theo từng chính sách.' : 'Kiểm soát đúng đối tượng, đúng định mức, đúng hạn và đủ hồ sơ thanh toán.'}</p></div></div>
     {list.error && <div className="alert alert--danger">{list.error}</div>}
 
     <ListCard

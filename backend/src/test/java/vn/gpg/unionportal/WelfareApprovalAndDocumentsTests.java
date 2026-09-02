@@ -103,6 +103,25 @@ class WelfareApprovalAndDocumentsTests {
         assertState(created.getId(), DocumentStatus.INCOMPLETE, DocumentStatus.COMPLETE, true);
     }
 
+    @Test
+    void userCompletesCareOnlyAfterAdminHasApprovedIt() {
+        var unit = units.findByCodeIgnoreCase("VCS").orElseThrow();
+        var policy = policies.findByCodeIgnoreCase("CD-01-01").orElseThrow();
+        authenticateUser(unit.getId());
+        var created = welfare.create(request("COMPLETE", unit.getId(), policy.getId(), WorkStatus.NEW));
+
+        assertThatThrownBy(() -> welfare.complete(created.getId()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("đang xử lý");
+
+        authenticateAdmin();
+        welfare.approve(created.getId());
+        authenticateUser(unit.getId());
+
+        var completed = welfare.complete(created.getId());
+        assertThat(completed.getStatus()).isEqualTo(WorkStatus.COMPLETED);
+    }
+
     private WelfareRequest request(String suffix, Long unitId, Long policyId, WorkStatus status) {
         return new WelfareRequest(
                 "WF-" + suffix + "-" + UUID.randomUUID().toString().substring(0, 8),

@@ -23,6 +23,7 @@ import vn.gpg.unionportal.model.DomainEnums.CaseStatus;
 import vn.gpg.unionportal.repository.LaborCaseRepository;
 import vn.gpg.unionportal.repository.UnionUnitRepository;
 import vn.gpg.unionportal.service.LaborCaseService;
+import vn.gpg.unionportal.service.LaborCaseDocumentService;
 import vn.gpg.unionportal.service.SpreadsheetImportService;
 
 import java.io.ByteArrayOutputStream;
@@ -45,6 +46,7 @@ class LaborCaseWorkflowAndBook1ImportTests {
     @Autowired private UnionUnitRepository units;
     @Autowired private LaborCaseRepository cases;
     @Autowired private LaborCaseService service;
+    @Autowired private LaborCaseDocumentService documents;
     @Autowired private SpreadsheetImportService spreadsheets;
     @Autowired private MockMvc mockMvc;
 
@@ -112,6 +114,20 @@ class LaborCaseWorkflowAndBook1ImportTests {
         assertThat(imported.getDeadline()).isNull();
         assertThat(imported.getOwnerName()).isNull();
         assertThat(imported.getStatus()).isEqualTo(CaseStatus.NEW);
+    }
+
+    @Test
+    void userCanAttachAndDownloadAFileForTheirOwnRecommendation() {
+        var unit = units.findByCodeIgnoreCase("VCS").orElseThrow();
+        authenticateUser(unit.getId());
+        var created = service.create(request("CASE-DOCUMENT-" + UUID.randomUUID().toString().substring(0, 8),
+                unit.getId(), CaseStatus.NEW, null));
+
+        var document = documents.upload(created.getId(), new MockMultipartFile("file", "kien-nghi.pdf",
+                "application/pdf", new byte[]{1, 2, 3}));
+
+        assertThat(documents.search(created.getId())).extracting(item -> item.fileName()).contains("kien-nghi.pdf");
+        assertThat(documents.download(document.id()).data()).containsExactly(1, 2, 3);
     }
 
     @Test
