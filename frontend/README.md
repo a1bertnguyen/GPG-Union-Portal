@@ -1,32 +1,30 @@
-# React + TypeScript + Vite
+<!-- generated-by: gsd-doc-writer -->
+# Frontend — GPG Union Portal
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Giao diện React 19 + TypeScript, xây dựng bằng Vite và phục vụ qua Nginx trong container.
 
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```powershell
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Vite chạy tại <http://localhost:3637> và proxy `/api`, `/actuator` sang backend cổng `3638`.
+
+| Lệnh | Chức năng |
+|---|---|
+| `npm run dev` | Chạy dev server |
+| `npm run build` | Type-check, build và audit bundle |
+| `npm test` | Chạy `tests/*.test.mjs` |
+| `npm run lint` | Kiểm tra bằng Oxlint |
+| `npm run preview` | Xem production build |
+
+```text
+src/
+├── components/  Thành phần dùng lại
+├── hooks/       Logic React dùng chung
+├── pages/       Màn hình nghiệp vụ
+├── portal/      Shell và điều hướng
+└── assets/      Tài nguyên tĩnh
+```
+
+Ứng dụng ưu tiên `VITE_API_URL`; nếu không có, client dùng `/api`. Xem [README chính](../README.md).
