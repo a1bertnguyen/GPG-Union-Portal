@@ -20,6 +20,7 @@ export type PageKey =
   | 'activityReports'
   | 'activityGallery'
   | 'finance'
+  | 'inventory'
   | 'documents'
   | 'reports'
   | 'kpi'
@@ -69,6 +70,7 @@ export const navGroups: SidebarNavGroup[] = [
     ] },
     { key: 'documents', label: 'Kho tài liệu', mark: 'KT' },
     { key: 'finance', label: 'Tài chính nội bộ', mark: 'TC' },
+    { key: 'inventory', label: 'Tồn kho', mark: 'TK' },
     { key: 'reports', label: 'Báo cáo', mark: 'BC' },
   ] },
   { label: 'Quản trị', items: [

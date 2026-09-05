@@ -20,6 +20,7 @@ import vn.gpg.unionportal.spec.SpecAggregates;
 import vn.gpg.unionportal.spec.Specs;
 import vn.gpg.unionportal.spec.WelfareSpecs;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -104,8 +105,8 @@ public class WelfareService {
         currentUser.requireUnitAccess(request.unionUnitId());
         WelfareRequest policyRequest = applyPolicy(request, false);
         WorkStatus initialStatus = currentUser.isAdmin() ? policyRequest.status() : WorkStatus.PENDING_APPROVAL;
-        var saved = repository.save(mapper.apply(new WelfareRecord(), withWorkflowState(
-                policyRequest, initialStatus, DocumentStatus.INCOMPLETE, DocumentStatus.INCOMPLETE, false)));
+        var saved = repository.save(syncCompletedAt(mapper.apply(new WelfareRecord(), withWorkflowState(
+                policyRequest, initialStatus, DocumentStatus.INCOMPLETE, DocumentStatus.INCOMPLETE, false))));
         events.changed("welfare", "CREATED", saved.getId(), saved.getUnionUnit().getId());
         return saved;
     }
@@ -123,7 +124,7 @@ public class WelfareService {
         WorkStatus status = currentUser.isAdmin() ? policyRequest.status() : WorkStatus.PENDING_APPROVAL;
         WelfareRequest normalized = withWorkflowState(policyRequest, status, entity.getDocumentStatus(),
                 entity.getReceiptStatus(), entity.getHasImage());
-        var saved = repository.save(mapper.apply(entity, normalized));
+        var saved = repository.save(syncCompletedAt(mapper.apply(entity, normalized)));
         events.changed("welfare", "UPDATED", saved.getId(), saved.getUnionUnit().getId());
         return saved;
     }
@@ -167,9 +168,22 @@ public class WelfareService {
             throw new IllegalArgumentException("Chỉ có thể hoàn thành hồ sơ chăm lo đang xử lý");
         }
         entity.setStatus(WorkStatus.COMPLETED);
-        var saved = repository.save(entity);
+        var saved = repository.save(syncCompletedAt(entity));
         events.changed("welfare", "COMPLETED", saved.getId(), saved.getUnionUnit().getId());
         return saved;
+    }
+
+    /**
+     * CARE02 scores completion against the deadline, so the moment of completion has to be its own column:
+     * {@code updatedAt} moves again on every later edit and would silently rewrite history.
+     */
+    private WelfareRecord syncCompletedAt(WelfareRecord entity) {
+        if (entity.getStatus() == WorkStatus.COMPLETED) {
+            if (entity.getCompletedAt() == null) entity.setCompletedAt(Instant.now());
+        } else {
+            entity.setCompletedAt(null);
+        }
+        return entity;
     }
 
     private WelfareRecord findById(Long id) {

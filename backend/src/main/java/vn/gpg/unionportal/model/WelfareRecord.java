@@ -9,6 +9,7 @@ import vn.gpg.unionportal.model.DomainEnums.WelfareType;
 import vn.gpg.unionportal.model.DomainEnums.WorkStatus;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 
 @Entity
@@ -17,6 +18,12 @@ import java.time.LocalDate;
 @Setter
 @NoArgsConstructor
 public class WelfareRecord extends BaseEntity {
+    @Column(name = "member_id")
+    private Long memberId;
+
+    @Column(name = "cancellation_reason", length = 1000)
+    private String cancellationReason;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -67,6 +74,10 @@ public class WelfareRecord extends BaseEntity {
 
     @Column(name = "has_image", nullable = false)
     private Boolean hasImage;
+
+    /** When the care was actually delivered; set by the completion step, not by any later edit. */
+    @Column(name = "completed_at")
+    private Instant completedAt;
 
     @Column(length = 1000)
     private String notes;

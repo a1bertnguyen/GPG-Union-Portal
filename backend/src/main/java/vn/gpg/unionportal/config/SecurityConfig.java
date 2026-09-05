@@ -63,7 +63,10 @@ public class SecurityConfig {
                                 "/api/cases", "/api/activities", "/api/finance",
                                 "/api/finance/summary", "/api/surveys", "/api/engagement",
                                 "/api/reports", "/api/reports/monthly", "/api/kpi", "/api/kpi/metadata",
+                                "/api/inventory/**",
                                 "/api/kpi/evidence/*/*",
+                                "/api/kpi/history", "/api/kpi/runs/*", "/api/kpi/results/*/evidence",
+                                "/api/kpi/readiness", "/api/kpi/statistics", "/api/kpi/populations", "/api/kpi/populations/*",
                                 "/api/realtime/events")
                                 .hasAnyRole("ADMIN", "USER")
                         // Whole-dataset numbers behind the metric cards, status dropdowns and analytics
@@ -84,6 +87,8 @@ public class SecurityConfig {
                                 .hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/spreadsheets/**").hasAnyRole("ADMIN", "USER")
                         .requestMatchers(HttpMethod.POST, "/api/surveys/*/responses").hasAnyRole("ADMIN", "USER")
+                        .requestMatchers(HttpMethod.POST, "/api/kpi/populations", "/api/kpi/populations/*/submit").hasAnyRole("ADMIN", "USER")
+                        .requestMatchers(HttpMethod.PUT, "/api/kpi/welfare/*/link", "/api/kpi/welfare/*/cancellation", "/api/kpi/activities/*/cancellation").hasAnyRole("ADMIN", "USER")
                         .requestMatchers(HttpMethod.POST, "/api/welfare/*/approve").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/cases/*/approve").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/reports/*/approve").hasRole("ADMIN")
@@ -93,17 +98,17 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/reports").hasRole("USER")
                         .requestMatchers(HttpMethod.POST,
                                 "/api/members", "/api/welfare", "/api/cases", "/api/activities",
-                                "/api/finance", "/api/surveys").hasAnyRole("ADMIN", "USER")
+                                "/api/finance", "/api/inventory/**", "/api/surveys").hasAnyRole("ADMIN", "USER")
                         .requestMatchers(HttpMethod.PUT, "/api/reports/*").hasRole("USER")
                         .requestMatchers(HttpMethod.PUT, "/api/welfare-policies/*").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT,
                                 "/api/members/*", "/api/welfare/*", "/api/cases/*", "/api/activities/*",
-                                "/api/finance/*", "/api/surveys/*").hasAnyRole("ADMIN", "USER")
+                                "/api/finance/*", "/api/inventory/**", "/api/surveys/*").hasAnyRole("ADMIN", "USER")
                         .requestMatchers(HttpMethod.DELETE,
                                 "/api/document-library/*", "/api/welfare-policies/*").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.DELETE,
                                 "/api/members/*", "/api/welfare/*", "/api/cases/*", "/api/activities/*",
-                                "/api/finance/*", "/api/reports/*", "/api/surveys/*",
+                                "/api/finance/*", "/api/inventory/**", "/api/reports/*", "/api/surveys/*",
                                 "/api/member-documents/*", "/api/activity-media/*", "/api/welfare-documents/*", "/api/finance-documents/*").hasAnyRole("ADMIN", "USER")
                         .anyRequest().hasRole("ADMIN"))
                 .oauth2ResourceServer(oauth -> oauth

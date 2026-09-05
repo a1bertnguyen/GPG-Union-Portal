@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -43,22 +44,18 @@ class GpgKpiEngineTests {
     private static final YearMonth CURRENT_MONTH = YearMonth.now(BUSINESS_ZONE);
     private static final YearMonth PREVIOUS_MONTH = CURRENT_MONTH.minusMonths(1);
     private static final Map<String, BigDecimal> WEIGHTS = Map.ofEntries(
-            Map.entry("GOV01", bd("5")), Map.entry("GOV02", bd("4")),
-            Map.entry("GOV03", bd("3")), Map.entry("GOV04", bd("3")),
-            Map.entry("DATA01", bd("5")), Map.entry("DATA02", bd("4")),
-            Map.entry("DATA03", bd("3")), Map.entry("DATA04", bd("3")),
-            Map.entry("REP01", bd("6")), Map.entry("REP02", bd("4")),
-            Map.entry("REP03", bd("3")), Map.entry("REP04", bd("2")),
+            Map.entry("GOV01", bd("5")), Map.entry("GOV02", bd("5")),
+            Map.entry("DATA01", bd("6")), Map.entry("DATA02", bd("4")),
+            Map.entry("DATA03", bd("3")), Map.entry("DATA04", bd("5")),
+            Map.entry("REP01", bd("9")), Map.entry("REP02", bd("5")),
             Map.entry("CARE01", bd("4")), Map.entry("CARE02", bd("6")),
-            Map.entry("CARE03", bd("4")), Map.entry("CARE04", bd("3")),
-            Map.entry("CARE05", bd("3")), Map.entry("GRV01", bd("3")),
-            Map.entry("GRV02", bd("5")), Map.entry("GRV03", bd("3")),
-            Map.entry("GRV04", bd("2")), Map.entry("GRV05", bd("2")),
-            Map.entry("ACT01", bd("3")), Map.entry("ACT02", bd("2")),
-            Map.entry("ACT03", bd("2")), Map.entry("ACT04", bd("2")),
-            Map.entry("ACT05", bd("1")), Map.entry("FIN01", bd("4")),
-            Map.entry("FIN02", bd("2")), Map.entry("FIN03", bd("2")),
-            Map.entry("FIN04", bd("2")));
+            Map.entry("CARE03", bd("6")), Map.entry("CARE04", bd("4")),
+            Map.entry("GRV01", bd("3")), Map.entry("GRV02", bd("6")),
+            Map.entry("GRV03", bd("4")), Map.entry("GRV04", bd("3")),
+            Map.entry("ACT01", bd("4")), Map.entry("ACT02", bd("3")),
+            Map.entry("ACT03", bd("3")), Map.entry("ACT04", bd("2")),
+            Map.entry("FIN01", bd("5")), Map.entry("FIN02", bd("3")),
+            Map.entry("FIN03", bd("2")));
 
     @Test
     @SuppressWarnings("unchecked")
@@ -81,6 +78,7 @@ class GpgKpiEngineTests {
         KpiSourceExclusionRepository exclusions = mock(KpiSourceExclusionRepository.class);
         SlaRuleRepository slas = mock(SlaRuleRepository.class);
         BusinessCalendarDayRepository calendar = mock(BusinessCalendarDayRepository.class);
+        KpiSourceEvidenceIndex evidenceIndex = mock(KpiSourceEvidenceIndex.class);
         CurrentUserService currentUser = mock(CurrentUserService.class);
 
         UnionUnit unit = unit();
@@ -117,19 +115,21 @@ class GpgKpiEngineTests {
 
         GpgKpiEngine engine = new GpgKpiEngine(units, members, memberChanges, reports, welfare, cases,
                 activities, finance, versions, definitions, classifications, gates, penalties, confirmations,
-                adjustments, exclusions, slas, calendar, currentUser);
+                adjustments, exclusions, slas, calendar, evidenceIndex, currentUser);
 
         var dashboard = engine.evaluate(PeriodType.MONTH, CURRENT_MONTH.getYear(), CURRENT_MONTH.getMonthValue(), null);
         var result = dashboard.results().getFirst();
 
         assertThat(result.runStatus()).isEqualTo(RunStatus.PROVISIONAL);
         assertThat(result.dataQualityRate()).isEqualByComparingTo(BigDecimal.ONE);
-        assertThat(result.baseScore()).isEqualByComparingTo("5");
-        assertThat(result.details()).hasSize(31);
+        assertThat(result.baseScore()).isEqualByComparingTo("26");
+        assertThat(result.details()).hasSize(23);
         assertThat(detail(result.details(), "DATA01").resultStatus()).isEqualTo(ResultStatus.CALCULATED);
         assertThat(detail(result.details(), "DATA01").evidence())
                 .allSatisfy(evidence -> assertThat(evidence.validationStatus().name()).isEqualTo("VALID"));
-        assertThat(detail(result.details(), "GRV03").resultStatus()).isEqualTo(ResultStatus.MISSING_DATA);
+        assertThat(detail(result.details(), "GRV03").resultStatus()).isEqualTo(ResultStatus.CALCULATED);
+        assertThat(detail(result.details(), "GRV04").resultStatus()).isEqualTo(ResultStatus.CALCULATED);
+        assertThat(detail(result.details(), "DATA04").resultStatus()).isEqualTo(ResultStatus.CALCULATED);
         assertThat(detail(result.details(), "ACT02").resultStatus()).isEqualTo(ResultStatus.MISSING_DATA);
         assertThat(detail(result.details(), "GRV03").evidence())
                 .allSatisfy(evidence -> {
@@ -353,6 +353,33 @@ class GpgKpiEngineTests {
                 .hasMessageContaining("REPORT_SUBMISSION");
     }
 
+    /**
+     * A unit whose source rows are complete scores from real data instead of collapsing into MISSING_DATA.
+     * REP01 is the one gap on purpose: read inside the period, no monthly report has reached its deadline yet,
+     * which is also why an in-period run can never be locked as official.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void scoresEveryDueKpiWhenTheUnitSourceRowsAreComplete() {
+        Fixture fixture = new Fixture();
+        var dashboard = fixture.engine().evaluate(PeriodType.MONTH,
+                CURRENT_MONTH.getYear(), CURRENT_MONTH.getMonthValue(), null);
+        var result = dashboard.results().getFirst();
+
+        assertThat(result.details()).filteredOn(item -> item.resultStatus() != ResultStatus.CALCULATED)
+                .extracting(Detail::kpiCode).containsExactly("REP01");
+        assertThat(result.baseScore()).isEqualByComparingTo("91");
+        assertThat(result.dataQualityRate()).isEqualByComparingTo(BigDecimal.ONE);
+        assertThat(result.finalClassification()).isEqualTo("Xuất sắc");
+        assertThat(result.rawClassification()).isEqualTo("Xuất sắc");
+        assertThat(result.runStatus()).isEqualTo(RunStatus.PROVISIONAL);
+        assertThat(result.rank()).isNull();
+        assertThat(dashboard.summary().lockEligibleCount()).isZero();
+        assertThat(detail(result.details(), "DATA04").numerator()).isEqualByComparingTo(BigDecimal.ONE);
+        assertThat(detail(result.details(), "ACT04").denominator()).isEqualByComparingTo("5");
+        assertThat(detail(result.details(), "FIN02").numerator()).isEqualByComparingTo(BigDecimal.ONE);
+    }
+
     private static Detail detail(List<Detail> details, String code) {
         return details.stream().filter(item -> code.equals(item.kpiCode())).findFirst().orElseThrow();
     }
@@ -371,7 +398,7 @@ class GpgKpiEngineTests {
                 mock(PenaltyRuleRepository.class), mock(KpiNoOccurrenceConfirmationRepository.class),
                 mock(KpiAdjustmentRepository.class), mock(KpiSourceExclusionRepository.class),
                 mock(SlaRuleRepository.class), mock(BusinessCalendarDayRepository.class),
-                mock(CurrentUserService.class));
+                mock(KpiSourceEvidenceIndex.class), mock(CurrentUserService.class));
     }
 
     private static SlaRule reportSla() {
@@ -383,6 +410,13 @@ class GpgKpiEngineTests {
         result.setDurationValue(1);
         result.setDurationUnit("BUSINESS_DAY");
         result.setBusinessCalendarId("GPG_DEFAULT");
+        return result;
+    }
+
+    private static SlaRule sla(String code, int businessDays) {
+        SlaRule result = reportSla();
+        result.setSlaCode(code);
+        result.setDurationValue(businessDays);
         return result;
     }
 
@@ -569,5 +603,145 @@ class GpgKpiEngineTests {
 
     private static BigDecimal bd(String value) {
         return new BigDecimal(value);
+    }
+
+    /** Every source repository stubbed with one complete row, so each due KPI has a real numerator. */
+    private static final class Fixture {
+        private final GpgKpiEngine engine;
+
+        @SuppressWarnings("unchecked")
+        private Fixture() {
+            LocalDate anchor = CURRENT_MONTH.atDay(1);
+            Instant anchorInstant = anchor.atStartOfDay(BUSINESS_ZONE).toInstant();
+            UnionUnit unit = unit();
+            unit.setContactPerson("Đầu mối CĐCS");
+            Member member = member(unit);
+            LaborCase grievance = closedCase(unit);
+            grievance.setDeadline(anchor);
+
+            MemberChange change = new MemberChange();
+            change.setId(61L);
+            change.setMember(member);
+            change.setChangeType("Điều chuyển");
+            change.setEffectiveDate(anchor);
+            change.setDescription("Chuyển bộ phận");
+            change.setRecordedBy("Cán bộ CĐCS");
+            created(change);
+
+            MonthlyReport report = new MonthlyReport();
+            report.setId(62L);
+            report.setUnionUnit(unit);
+            report.setReportMonth(anchor);
+            report.setPreparedBy("Người lập");
+            report.setPlanNextMonth("Kế hoạch kỳ sau");
+            report.setSupportRequest("Đề xuất hỗ trợ");
+            report.setStatus(ReportStatus.SUBMITTED);
+            report.setSubmittedAt(anchorInstant);
+            created(report);
+
+            WelfareRecord care = new WelfareRecord();
+            care.setId(63L);
+            care.setUnionUnit(unit);
+            care.setRecordCode("CS-REAL-01");
+            care.setWelfareType(WelfareType.BIRTHDAY);
+            care.setPolicyId(1L);
+            care.setPolicyName("Sinh nhật");
+            care.setBeneficiaryName("Nguyễn Dữ Liệu");
+            care.setEventDate(anchor);
+            care.setDeadline(anchor);
+            care.setStatus(WorkStatus.COMPLETED);
+            care.setCompletedAt(anchorInstant);
+            care.setAmount(bd("100000"));
+            care.setStandardAmount(bd("100000"));
+            care.setDocumentStatus(DocumentStatus.COMPLETE);
+            care.setReceiptStatus(DocumentStatus.COMPLETE);
+            care.setHasImage(true);
+            created(care);
+
+            UnionActivity activity = new UnionActivity();
+            activity.setId(64L);
+            activity.setUnionUnit(unit);
+            activity.setActivityCode("ACT-REAL-01");
+            activity.setName("Ngày hội đoàn viên");
+            activity.setEventDate(anchor);
+            activity.setStatus(ActivityStatus.COMPLETED);
+            activity.setPlannedBudget(bd("1000000"));
+            activity.setActualCost(bd("500000"));
+            activity.setInvitedCount(10);
+            activity.setParticipantCount(10);
+            activity.setCheckInCount(10);
+            activity.setWorkersReached(10);
+            activity.setParticipantList("Nguyễn Dữ Liệu");
+            activity.setUsefulnessScore(bd("5"));
+            activity.setReportCompleted(true);
+            activity.setDocumentStatus(DocumentStatus.COMPLETE);
+            created(activity);
+
+            FinanceEntry entry = new FinanceEntry();
+            entry.setId(65L);
+            entry.setUnionUnit(unit);
+            entry.setEntryCode(GpgKpiEngine.welfareEntryCode(care.getId()));
+            entry.setTransactionDate(anchor);
+            entry.setEntryType(FinanceEntryType.EXPENSE);
+            entry.setCategory("Chi chăm lo");
+            entry.setAmount(bd("100000"));
+            entry.setDescription("Chi theo chính sách sinh nhật");
+            entry.setDocumentStatus(DocumentStatus.COMPLETE);
+            created(entry);
+
+            UnionUnitRepository units = mock(UnionUnitRepository.class);
+            MemberRepository members = mock(MemberRepository.class);
+            MemberChangeRepository memberChanges = mock(MemberChangeRepository.class);
+            MonthlyReportRepository reports = mock(MonthlyReportRepository.class);
+            WelfareRecordRepository welfare = mock(WelfareRecordRepository.class);
+            LaborCaseRepository cases = mock(LaborCaseRepository.class);
+            UnionActivityRepository activities = mock(UnionActivityRepository.class);
+            FinanceEntryRepository finance = mock(FinanceEntryRepository.class);
+            KpiVersionRepository versions = mock(KpiVersionRepository.class);
+            KpiDefinitionRepository definitions = mock(KpiDefinitionRepository.class);
+            KpiClassificationRuleRepository classifications = mock(KpiClassificationRuleRepository.class);
+            KpiClassificationGateRepository gates = mock(KpiClassificationGateRepository.class);
+            PenaltyRuleRepository penalties = mock(PenaltyRuleRepository.class);
+            KpiNoOccurrenceConfirmationRepository confirmations =
+                    mock(KpiNoOccurrenceConfirmationRepository.class);
+            KpiAdjustmentRepository adjustments = mock(KpiAdjustmentRepository.class);
+            KpiSourceExclusionRepository exclusions = mock(KpiSourceExclusionRepository.class);
+            SlaRuleRepository slas = mock(SlaRuleRepository.class);
+            BusinessCalendarDayRepository calendar = mock(BusinessCalendarDayRepository.class);
+            KpiSourceEvidenceIndex evidenceIndex = mock(KpiSourceEvidenceIndex.class);
+            CurrentUserService currentUser = mock(CurrentUserService.class);
+
+            KpiVersion version = version();
+            when(versions.findAll(any(Sort.class))).thenReturn(List.of(version));
+            when(definitions.findByVersionIdOrderById(version.getVersionId())).thenReturn(catalog());
+            when(classifications.findByVersionIdOrderByMinimumScoreDesc(version.getVersionId()))
+                    .thenReturn(classificationRules());
+            when(gates.findByVersionId(version.getVersionId())).thenReturn(gateRules());
+            when(penalties.findByVersionId(version.getVersionId())).thenReturn(penaltyRules());
+            when(exclusions.findByActiveTrue()).thenReturn(List.of());
+            when(slas.findByVersionId(version.getVersionId())).thenReturn(List.of(reportSla(),
+                    sla("MEMBER_CHANGE", 5), sla("GRV_ACK", 1), sla("CARE_NORMAL", 3)));
+            when(units.findAll(any(Sort.class))).thenReturn(List.of(unit));
+            when(currentUser.scopedUnitId(null)).thenReturn(null);
+            when(currentUser.isAdmin()).thenReturn(true);
+            when(members.findAll(any(Specification.class))).thenReturn(List.of(member));
+            when(memberChanges.findAll(any(Specification.class))).thenReturn(List.of(change));
+            when(reports.findAll(any(Specification.class))).thenReturn(List.of(report));
+            when(welfare.findAll(any(Specification.class))).thenReturn(List.of(care));
+            when(cases.findAll(any(Specification.class))).thenReturn(List.of(grievance));
+            when(activities.findAll(any(Specification.class))).thenReturn(List.of(activity));
+            when(finance.findAll(any(Specification.class))).thenReturn(List.of(entry));
+            when(evidenceIndex.welfareWithDocuments(any())).thenReturn(Set.of(care.getId()));
+            when(evidenceIndex.activitiesWithMedia(any())).thenReturn(Set.of(activity.getId()));
+            when(evidenceIndex.financeWithDocuments(any())).thenReturn(Set.of(entry.getId()));
+
+            engine = new GpgKpiEngine(units, members, memberChanges, reports, welfare, cases, activities,
+                    finance, versions, definitions, classifications, gates, penalties, confirmations,
+                    adjustments, exclusions, slas, calendar, evidenceIndex, currentUser);
+        }
+
+        GpgKpiEngine engine() {
+            return engine;
+        }
     }
 }

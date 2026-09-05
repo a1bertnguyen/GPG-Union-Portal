@@ -16,6 +16,9 @@ import java.time.LocalTime;
 @Setter
 @NoArgsConstructor
 public class UnionActivity extends BaseEntity {
+    @Column(name = "cancellation_reason", length = 1000)
+    private String cancellationReason;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

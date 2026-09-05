@@ -1,0 +1,56 @@
+.inventory-page { --inventory-border: #dce5f0; --inventory-ink: #203653; --inventory-muted: #76859b; --inventory-blue: #225fc1; --inventory-green: #137a58; }
+.inventory-page .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+
+.inventory-summary-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin: 0 0 16px; }
+.inventory-summary-grid > article { min-width: 0; display: grid; gap: 5px; border: 1px solid var(--inventory-border); border-radius: 12px; padding: 14px 15px; background: #fff; box-shadow: 0 4px 13px rgba(25, 48, 90, .04); }
+.inventory-summary-grid > article > span { color: var(--inventory-muted); font-size: 10px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+.inventory-summary-grid > article > strong { overflow: hidden; color: var(--inventory-ink); font-size: 25px; line-height: 1.05; letter-spacing: -.04em; text-overflow: ellipsis; white-space: nowrap; }
+.inventory-summary-grid > article > small { overflow: hidden; color: #8995a7; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.inventory-summary-grid > .inventory-summary-grid__stock { border-color: #b8d4ed; background: linear-gradient(135deg, #f0f8ff, #fff); }
+.inventory-summary-grid > .inventory-summary-grid__stock > strong { color: var(--inventory-blue); }
+.inventory-summary-grid > .is-alert { border-color: #f0cb89; background: #fffaf1; }
+.inventory-summary-grid > .is-alert > strong { color: #b56611; }
+
+.inventory-tabs { display: flex; gap: 8px; margin: 0 0 16px; overflow-x: auto; padding: 2px; }
+.inventory-tabs > button { flex: 1 0 180px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--inventory-border); border-radius: 10px; padding: 10px 12px; color: #53647d; background: #fff; font: inherit; font-size: 12px; font-weight: 800; text-align: left; cursor: pointer; transition: background .15s ease, border-color .15s ease, box-shadow .15s ease; }
+.inventory-tabs > button:hover { border-color: #aac4e7; background: #f7faff; }
+.inventory-tabs > button.is-active { border-color: #2b67c7; color: #164d9e; background: #edf4ff; box-shadow: 0 0 0 2px rgba(43, 103, 199, .1); }
+.inventory-tabs > button > b { min-width: 26px; border-radius: 999px; padding: 3px 7px; color: #61718a; background: #edf2f8; font-size: 10px; text-align: center; }
+.inventory-tabs > button.is-active > b { color: #fff; background: #2461bf; }
+
+.inventory-panel { overflow: hidden; }
+.inventory-panel__heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid #e2e9f1; padding: 15px 17px; background: #fff; }
+.inventory-panel__heading > div:first-child { min-width: 0; }.inventory-panel__heading .eyebrow { margin-bottom: 3px; }
+.inventory-panel__heading h2 { margin: 0; color: var(--inventory-ink); font-size: 15px; }
+.inventory-panel__tools { display: flex; align-items: center; gap: 8px; }.inventory-panel__tools label { min-width: min(290px, 34vw); }
+.inventory-panel__tools input { width: 100%; border: 1px solid #d8e1ec; border-radius: 8px; padding: 8px 10px; color: #273b5d; background: #fafcff; font: inherit; font-size: 12px; }
+.inventory-panel__tools input:focus { border-color: #78a1df; outline: 3px solid rgba(51, 104, 201, .12); }
+
+.inventory-table-wrap { min-height: 180px; }.inventory-table-wrap table { min-width: 1050px; }
+.inventory-table-wrap th { color: #718098; background: #f7f9fc; font-size: 10px; letter-spacing: .03em; text-transform: uppercase; }
+.inventory-table-wrap td { vertical-align: middle; color: #43536c; font-size: 12px; }.inventory-table-wrap td > strong { display: block; color: #273b5d; font-size: 12px; }
+.inventory-table-wrap td > small { display: block; max-width: 220px; overflow: hidden; margin-top: 3px; color: #8390a3; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.inventory-stock { color: var(--inventory-green) !important; }.inventory-stock.is-low { color: #ad6418 !important; }.inventory-stock.is-out { color: #bd3e49 !important; }
+.inventory-status { display: inline-flex; border-radius: 999px; padding: 4px 7px; color: #6d7b90; background: #edf1f5; font-size: 10px; font-weight: 850; white-space: nowrap; }.inventory-status.is-active { color: #147454; background: #def5e9; }
+.inventory-empty-note { margin: 0; padding: 13px 17px 17px; color: #8591a3; font-size: 12px; text-align: center; }
+
+.inventory-modal { max-width: 930px; }.inventory-form { padding-top: 4px; }
+.inventory-company-scope { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: stretch; border: 1px solid #d9e5f1; border-radius: 10px; padding: 12px; background: #f8fbff; }
+.inventory-company-scope .field { margin: 0; }.inventory-scope-readonly, .inventory-company-readonly { min-width: 0; display: grid; align-content: center; gap: 3px; border: 1px solid #dce6f1; border-radius: 8px; padding: 10px 11px; background: #fff; }
+.inventory-scope-readonly > span, .inventory-company-readonly > span { color: #7d8b9f; font-size: 10px; font-weight: 850; letter-spacing: .06em; text-transform: uppercase; }
+.inventory-scope-readonly > strong, .inventory-company-readonly > strong { overflow: hidden; color: #29466f; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }.inventory-company-readonly > small { color: #8794a7; font-size: 10px; }
+
+.inventory-item-note { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 18px; border: 1px solid #cfe0f2; border-radius: 9px; padding: 10px 12px; background: #f5f9ff; }
+.inventory-item-note > div { min-width: 0; display: grid; gap: 3px; }.inventory-item-note > div:nth-child(2) { text-align: right; }
+.inventory-item-note span { color: #71819a; font-size: 10px; font-weight: 800; text-transform: uppercase; }.inventory-item-note strong { overflow: hidden; color: #244c87; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }.inventory-item-note small { grid-column: 1 / -1; color: #6e7e94; font-size: 10px; }
+.inventory-item-note.is-danger { border-color: #ecc3c9; background: #fff6f7; }.inventory-item-note.is-danger strong { color: #a83a46; }
+.inventory-inline-alert { grid-column: 1 / -1; border-left: 3px solid #e49a2c; border-radius: 7px; padding: 9px 11px; color: #8a5a1f; background: #fff9ee; font-size: 11px; line-height: 1.45; }
+
+.inventory-member-picker { grid-column: 1 / -1; display: grid; gap: 8px; border: 1px solid #dbe5f1; border-radius: 10px; padding: 12px; background: #fbfcfe; }.inventory-member-picker .field { margin: 0; }
+.inventory-recipient-suggestions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }.inventory-recipient-suggestions > button { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid #dce4ed; border-radius: 8px; padding: 8px 9px; color: inherit; background: #fff; text-align: left; cursor: pointer; }.inventory-recipient-suggestions > button:hover, .inventory-recipient-suggestions > button.is-selected { border-color: #8fb0df; background: #f2f7ff; }.inventory-recipient-suggestions > button > span { min-width: 0; display: grid; gap: 3px; }.inventory-recipient-suggestions strong { overflow: hidden; color: #244675; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }.inventory-recipient-suggestions small { overflow: hidden; color: #7f8b9e; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }.inventory-recipient-suggestions b { flex: none; color: #2760ba; font-size: 10px; }
+
+.inventory-recipient-empty { border: 1px dashed #ccd8e7; border-radius: 8px; padding: 12px; color: #7f8d9f; background: #fff; font-size: 11px; text-align: center; }.inventory-recipient-profile { display: grid; gap: 10px; border: 1px solid #cfe0f3; border-radius: 9px; padding: 11px; background: #f4f8fd; }.inventory-recipient-profile__heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }.inventory-recipient-profile__heading > div { min-width: 0; display: grid; gap: 3px; }.inventory-recipient-profile__heading span { color: #71839c; font-size: 10px; font-weight: 850; text-transform: uppercase; }.inventory-recipient-profile__heading strong { overflow: hidden; color: #224677; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }.inventory-recipient-profile__heading > b { flex: none; border-radius: 999px; padding: 4px 7px; color: #195da9; background: #e1edfc; font-size: 10px; }
+.inventory-recipient-profile__grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; border: 1px solid #dae3ef; background: #dae3ef; }.inventory-recipient-profile__grid > div { min-width: 0; padding: 8px 9px; background: #fff; }.inventory-recipient-profile__grid span { display: block; margin-bottom: 3px; color: #7a879a; font-size: 9px; font-weight: 800; text-transform: uppercase; }.inventory-recipient-profile__grid strong { display: block; overflow: hidden; color: #334b70; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }.inventory-recipient-profile > small { color: #708098; font-size: 10px; line-height: 1.4; }
+
+@media (max-width: 1120px) { .inventory-summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }.inventory-summary-grid > article:last-child { grid-column: auto / span 2; }.inventory-panel__heading { align-items: flex-start; flex-direction: column; }.inventory-panel__tools { width: 100%; }.inventory-panel__tools label { min-width: 0; flex: 1; } }
+@media (max-width: 700px) { .inventory-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }.inventory-summary-grid > article:last-child { grid-column: auto; }.inventory-summary-grid > article { padding: 11px; }.inventory-summary-grid > article > strong { font-size: 21px; }.inventory-tabs > button { flex-basis: 150px; }.inventory-panel__heading { padding: 13px; }.inventory-panel__tools { align-items: stretch; flex-direction: column; }.inventory-panel__tools .button { width: 100%; }.inventory-company-scope { grid-template-columns: 1fr; }.inventory-recipient-suggestions { grid-template-columns: 1fr; }.inventory-recipient-profile__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }.inventory-item-note { grid-template-columns: 1fr; }.inventory-item-note > div:nth-child(2) { text-align: left; } }

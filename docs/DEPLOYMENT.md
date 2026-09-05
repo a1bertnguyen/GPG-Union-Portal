@@ -11,6 +11,10 @@ docker compose ps
 
 Compose chạy MySQL 8.4, backend Spring Boot và frontend Nginx. `docker compose down` giữ volume; `docker compose down -v` xóa dữ liệu local.
 
+Frontend image nhận `VITE_API_URL` lúc build. Để chạy chung Compose, giữ giá trị `/api` (Nginx proxy sang service `backend`). Khi deploy frontend và backend tách riêng, đặt `VITE_API_URL` bằng URL API public và đặt `CORS_ALLOWED_ORIGIN` bằng origin frontend public trong `.env` trước khi chạy `docker compose build`.
+
+Các file `backend/scripts/demo-kpi.sql` và `backend/scripts/cleanup-demo-kpi.sql` không được copy vào backend image và không được Flyway tự chạy; chỉ dùng để nạp dữ liệu minh họa local thủ công.
+
 ## Vercel
 
 `vercel.json` khai báo frontend Vite, backend container từ `backend/Dockerfile.vercel`, vùng `sin1`, và rewrite `/api`, `/actuator` tới backend.

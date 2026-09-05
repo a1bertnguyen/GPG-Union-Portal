@@ -7,6 +7,7 @@ import DashboardPage from '../pages/DashboardPage'
 import DocumentLibraryPage from '../pages/DocumentLibraryPage'
 import FinanceEntryPage from '../pages/FinancePages'
 import HomeDashboardPage from '../pages/HomeDashboardPage'
+import InventoryPage from '../pages/InventoryPage'
 import KpiPage from '../pages/KpiPage'
 import { MemberChangesPage, MemberDetailPanel, MemberDocumentsPage } from '../pages/MemberWorkspacePages'
 import { CasesInsightPage, WelfareInsightPage } from '../pages/OperationalInsightPages'
@@ -62,6 +63,7 @@ export default function PortalPage({
   if (active === 'welfare') return <WelfareRecordPage units={units} isAdmin={isAdmin} />
   if (active === 'cases') return <LaborCasePage units={units} isAdmin={isAdmin} />
   if (active === 'activities') return <CrudPage endpoint="/activities" title="Kế hoạch chương trình" description="Tạo và quản lý thông tin kế hoạch. Kết quả thực tế, KPI và chứng cứ được hoàn thiện tại Báo cáo sau chương trình." singular="Chương trình" fields={activityFields} columns={activityColumns} units={units} excelResource="activities" excelFilename="mau-chuong-trinh.xlsx" summaryBuilder={activitySummary} presetFilters={activityPresetFilters} />
+  if (active === 'inventory') return <InventoryPage units={units} isAdmin={isAdmin} currentUnitId={session.user.unionUnitId} />
 
   return <FinanceEntryPage units={units} />
 }

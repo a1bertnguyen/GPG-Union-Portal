@@ -75,9 +75,9 @@ class KpiScoringPolicyTests {
     }
 
     @Test
-    void catalogAndSeedContainExactlyTheSpecifiedThirtyOneCodes() throws Exception {
-        assertThat(GpgKpiEngine.EXPECTED_CODES).hasSize(31);
-        String migration = Files.readString(Path.of("src/main/resources/db/migration/V21__create_gpg_kpi_engine.sql"));
+    void catalogAndSeedContainExactlyTheCodesOfTheActiveVersion() throws Exception {
+        assertThat(GpgKpiEngine.EXPECTED_CODES).hasSize(23);
+        String migration = Files.readString(Path.of("src/main/resources/db/migration/V22__add_gpg_kpi_v2_catalog.sql"));
         for (String code : GpgKpiEngine.EXPECTED_CODES) {
             assertThat(migration).contains("'" + code + "'");
         }

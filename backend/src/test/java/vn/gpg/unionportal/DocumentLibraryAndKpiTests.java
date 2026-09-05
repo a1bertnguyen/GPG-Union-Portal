@@ -72,7 +72,7 @@ class DocumentLibraryAndKpiTests {
 
         assertThat(result.results()).hasSize(1);
         assertThat(result.results().getFirst().unionUnitId()).isEqualTo(vcs.getId());
-        assertThat(result.results().getFirst().details()).hasSize(31);
+        assertThat(result.results().getFirst().details()).hasSize(24);
     }
 
     @Test

@@ -25,7 +25,7 @@ services:
       DB_URL: jdbc:mysql://mysql:3306/union_portal?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Bangkok
       DB_USERNAME: union_user
       DB_PASSWORD: union_password
-      CORS_ALLOWED_ORIGIN: http://localhost:3637
+      CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN:-http://localhost:3637}
       JWT_SECRET: ${JWT_SECRET:-local-dev-only-change-this-jwt-secret-2026-gpg-union-portal}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@123!}
@@ -43,7 +43,7 @@ services:
       REALTIME_HEARTBEAT_MILLIS: ${REALTIME_HEARTBEAT_MILLIS:-15000}
       TZ: Asia/Bangkok
     ports:
-      - "3638:3638"
+      - "${BACKEND_PORT:-3638}:3638"
     depends_on:
       mysql:
         condition: service_healthy
@@ -55,9 +55,13 @@ services:
       start_period: 25s
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api}
+        VITE_CANONICAL_ORIGIN: ${VITE_CANONICAL_ORIGIN:-}
     ports:
-      - "3637:80"
+      - "${FRONTEND_PORT:-3637}:80"
     depends_on:
       backend:
         condition: service_healthy

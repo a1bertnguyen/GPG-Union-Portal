@@ -63,8 +63,12 @@ public final class KpiModels {
                              List<AdjustmentAudit> adjustments) {
     }
 
+    /**
+     * {@code lockEligibleCount} is how many units a period lock would turn into an official FINAL run:
+     * a live dashboard read never produces FINAL on its own, so the other counters stay zero until a lock.
+     */
     public record Summary(BigDecimal averageScore, int finalUnitCount, int provisionalUnitCount,
-                          int excellentCount, int attentionCount) {
+                          int excellentCount, int attentionCount, int lockEligibleCount) {
     }
 
     public record Dashboard(String versionId, PeriodType periodType, LocalDate periodStart,
@@ -77,6 +81,32 @@ public final class KpiModels {
     }
 
     public record Metadata(List<VersionWindow> versions) {
+    }
+
+    /** What a period lock did to one unit. */
+    public record LockedUnit(Long unionUnitId, String unionUnitCode, String unionUnitName, Long runId,
+                             int revision, RunStatus runStatus, BigDecimal finalScore,
+                             String finalClassification, Integer rank, boolean unchanged,
+                             List<String> blockingKpiCodes) {
+    }
+
+    public record LockResult(String versionId, PeriodType periodType, LocalDate periodStart,
+                             LocalDate periodEnd, Instant lockedAt, String lockedBy, int finalCount,
+                             int provisionalCount, int unchangedCount, List<LockedUnit> units) {
+    }
+
+    public record HistoryPoint(PeriodType periodType, LocalDate periodStart, LocalDate periodEnd,
+                               String periodLabel, String versionId, int revision, RunStatus runStatus,
+                               BigDecimal baseScore, BigDecimal bonusPoints, BigDecimal penaltyPoints,
+                               BigDecimal finalScore, String rawClassification, String finalClassification,
+                               Integer rank, BigDecimal dataQualityRate, Instant lockedAt, String lockedBy) {
+    }
+
+    public record UnitHistory(Long unionUnitId, String unionUnitCode, String unionUnitName,
+                              List<HistoryPoint> points) {
+    }
+
+    public record History(int fromYear, int toYear, PeriodType periodType, List<UnitHistory> units) {
     }
 
     public record EvidenceField(String label, String value) {

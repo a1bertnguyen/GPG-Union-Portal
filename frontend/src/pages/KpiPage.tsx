@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { KpiHistoryPanel } from './KpiHistoryPanel'
 import {
   downloadKpiEvidenceAttachment,
   loadKpiDashboard,
@@ -125,8 +126,8 @@ function KpiEvidencePanel({ detail }: { detail: KpiDetailView | undefined }) {
     </div>
     <p>{detail.explanation || 'Engine chưa cung cấp giải thích cho KPI này.'}</p>
     <dl className="kpi-calculation-grid">
-      <div><dt>Tử số</dt><dd>{formatKpiNumber(detail.numerator)}</dd></div>
-      <div><dt>Mẫu số</dt><dd>{formatKpiNumber(detail.denominator)}</dd></div>
+      <div><dt>Đã làm</dt><dd>{formatKpiNumber(detail.numerator)}</dd></div>
+      <div><dt>Tổng cần làm</dt><dd>{formatKpiNumber(detail.denominator)}</dd></div>
       <div><dt>Mục tiêu</dt><dd>{formatKpiNumber(detail.targetValue)}</dd></div>
       <div><dt>Điểm chuẩn hóa</dt><dd>{formatKpiNumber(detail.normalizedScore)}</dd></div>
       <div><dt>Trọng số cấu hình</dt><dd>{formatKpiNumber(detail.weight)}</dd></div>
@@ -209,6 +210,49 @@ function KpiEvidencePanel({ detail }: { detail: KpiDetailView | undefined }) {
       </>}
     </section>}
   </div>
+}
+
+function SimpleKpiPanel({ unit, periodLabel }: { unit: KpiUnitResultView; periodLabel: string }) {
+  const groupNames = new Map(unit.groups.map(group => [group.groupCode, group.name]))
+  const [activeGroupCode, setActiveGroupCode] = useState(unit.groups[0]?.groupCode ?? '')
+  const activeGroup = unit.groups.find(group => group.groupCode === activeGroupCode) ?? unit.groups[0]
+  const visibleDetails = unit.details.filter(detail => detail.groupCode === activeGroup?.groupCode)
+  return <article className="panel kpi-simple-panel">
+    <header className="kpi-panel-heading">
+      <div><span>{unit.unionUnitCode} · {periodLabel}</span><strong>KPI tính nhanh theo từng nội dung</strong></div>
+      <div className={`kpi-simple-score kpi-simple-score--${classificationTone(unit.finalClassification)}`}>
+        <strong>{formatKpiNumber(unit.finalScore)}<small>/100</small></strong>
+        <span>{unit.runStatus === 'FINAL' ? unit.finalClassification : `Tạm tính · ${unit.finalClassification}`}</span>
+      </div>
+    </header>
+    <p className="kpi-simple-hint"><b>Đã làm</b> là số hồ sơ đã hoàn tất. <b>Tổng cần làm</b> là tổng số hồ sơ phải xử lý. Mỗi thẻ dưới đây là một dashboard nhỏ; bấm vào thẻ để xem riêng nhóm đó.</p>
+    <div className="kpi-mini-dashboard-grid" aria-label="Các dashboard KPI theo nhóm">
+      {unit.groups.map(group => {
+        const groupDetails = unit.details.filter(detail => detail.groupCode === group.groupCode)
+        return <button type="button" key={group.groupCode} aria-pressed={activeGroup?.groupCode === group.groupCode} className={`kpi-mini-dashboard${activeGroup?.groupCode === group.groupCode ? ' is-active' : ''}`} onClick={() => setActiveGroupCode(group.groupCode)}>
+          <div className="kpi-mini-dashboard__heading"><strong>{group.name}</strong><span>{kpiStatusLabel(group.status)}</span></div>
+          <b className="kpi-mini-dashboard__score">{group.score === null ? '—' : formatKpiNumber(group.score)}<small>/100</small></b>
+          <div className="kpi-group-progress" role="progressbar" aria-label={`Điểm nhóm ${group.name}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={group.score ?? undefined}><i style={{ width: visualPercent(group.score) }} /></div>
+          <small>{groupDetails.length} chỉ tiêu · {formatKpiNumber(group.earnedPoints)} điểm đóng góp</small>
+        </button>
+      })}
+    </div>
+    <div className="kpi-simple-group-title"><strong>{activeGroup?.name ?? 'Nội dung KPI'}</strong><span>{visibleDetails.length} chỉ tiêu</span></div>
+    <div className="table-wrap"><table className="kpi-simple-table"><thead><tr><th>Nội dung</th><th>Đã làm / Tổng cần làm</th><th>Tỷ lệ</th><th>Điểm</th><th>Trạng thái</th></tr></thead><tbody>
+      {visibleDetails.map(detail => {
+        const ratio = detail.numerator !== null && detail.denominator !== null && detail.denominator > 0
+          ? detail.numerator / detail.denominator
+          : null
+        return <tr key={detail.kpiCode}>
+          <td><strong>{groupNames.get(detail.groupCode) ?? detail.groupCode}</strong><small>{detail.name}</small></td>
+          <td>{formatKpiNumber(detail.numerator)} <span>/</span> {formatKpiNumber(detail.denominator)}</td>
+          <td><strong>{formatKpiRate(ratio)}</strong></td>
+          <td><strong>{formatKpiNumber(detail.earnedPoints)}</strong><small>/{formatKpiNumber(detail.eligibleWeight)}</small></td>
+          <td><span className={`kpi-status kpi-status--${detail.resultStatus.toLowerCase()}`}>{kpiStatusLabel(detail.resultStatus)}</span></td>
+        </tr>
+      })}
+    </tbody></table></div>
+  </article>
 }
 
 export default function KpiPage({ units, isAdmin, currentUnitId, currentUnitCode, currentUnitName }: Props) {
@@ -339,6 +383,10 @@ export default function KpiPage({ units, isAdmin, currentUnitId, currentUnitCode
   }
 
   return <section className="page-section kpi-report-page">
+    <details className="kpi-history-collapsible">
+      <summary>Đối soát nhân sự và xem lịch sử KPI</summary>
+      <KpiHistoryPanel key={`${year}:${selectedUnit?.unionUnitId ?? ''}`} year={year} unitId={selectedUnit?.unionUnitId} isAdmin={isAdmin} onChanged={() => setRetryKey(k => k + 1)} />
+    </details>
     <div className="kpi-report-heading">
       <div>
         <div className="kpi-report-heading__meta">
@@ -346,7 +394,7 @@ export default function KpiPage({ units, isAdmin, currentUnitId, currentUnitCode
           <span>{isAdmin ? 'Điều hành KPI toàn hệ thống' : 'Kết quả KPI công đoàn cơ sở'}</span>
         </div>
         <h1>Báo cáo KPI công đoàn</h1>
-        <p>Điểm được tính từ dữ liệu nghiệp vụ tại ngày chốt, có cảnh báo chất lượng và truy xuất đến bản ghi chứng minh.</p>
+        <p>Chọn kỳ để xem nhanh số đã làm, tổng cần làm, tỷ lệ và điểm của từng nội dung.</p>
       </div>
       <button type="button" className="button button--ghost kpi-print-button" onClick={() => window.print()}>
         <span aria-hidden="true">↗</span> Xuất báo cáo
@@ -501,6 +549,9 @@ export default function KpiPage({ units, isAdmin, currentUnitId, currentUnitCode
           </article>
 
           {selectedUnit && <>
+            <SimpleKpiPanel unit={selectedUnit} periodLabel={chosenPeriodLabel} />
+            <details className="kpi-advanced-details">
+              <summary>Xem nhóm KPI, chứng cứ và cảnh báo chi tiết</summary>
             <article className="panel kpi-group-panel">
               <header className="kpi-panel-heading">
                 <div><span>{selectedUnit.unionUnitCode} · {chosenPeriodLabel}</span><strong>Điểm 7 nhóm KPI</strong></div>
@@ -577,6 +628,7 @@ export default function KpiPage({ units, isAdmin, currentUnitId, currentUnitCode
                 <footer><span>Chất lượng dữ liệu</span><strong>{formatKpiRate(selectedUnit.dataQualityRate)}</strong></footer>
               </aside>
             </div>
+            </details>
           </>}
         </>}
     </>}

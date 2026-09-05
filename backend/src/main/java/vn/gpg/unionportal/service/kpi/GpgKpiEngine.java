@@ -29,8 +29,11 @@ import java.util.stream.Collectors;
 @Service
 @Transactional(readOnly = true)
 public class GpgKpiEngine {
-    private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Bangkok");
+    static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Bangkok");
     private static final MathContext MC = MathContext.DECIMAL128;
+    /** Joins a module and a record key into one exclusion lookup key; NUL cannot occur in either part. */
+    private static final char EXCLUSION_SEPARATOR = 0;
+    private static final BigDecimal USEFULNESS_SCALE_MAX = BigDecimal.valueOf(5);
     private static final List<String> GROUP_ORDER = List.of("GOV", "DATA", "REP", "CARE", "GRV", "ACT", "FIN");
     private static final Map<String, String> GROUP_NAMES = Map.of(
             "GOV", "Tổ chức, hồ sơ và năng lực BCH",
@@ -46,14 +49,27 @@ public class GpgKpiEngine {
     private static final Set<String> REQUIRED_PENALTY_CODES = Set.of("P01", "P02", "P03", "P04", "P05", "P06", "P07");
     private static final Set<String> REQUIRED_GATE_CODES = Set.of(
             "INTEGRITY_VIOLATION", "SERIOUS_OPEN_CASE", "MISSING_MANDATORY_REPORT", "GOVERNANCE_INCOMPLETE");
+    static final String REPORT_SLA = "REPORT_SUBMISSION";
+    static final String MEMBER_CHANGE_SLA = "MEMBER_CHANGE";
+    static final String GRIEVANCE_ACK_SLA = "GRV_ACK";
+    static final String CARE_INTAKE_SLA = "CARE_NORMAL";
+
+    /**
+     * Catalog of {@code GPG-CD-KPI-V2}. Every code here has a calculator below that reads both a numerator
+     * and a denominator from data the schema actually stores. The V1 codes that needed sources which do not
+     * exist yet (cadre training, an organisation change log, an approval log, worker feedback, approved
+     * programme goals, balance reconciliation) are deliberately absent: they only ever produced
+     * {@code MISSING_DATA} and dragged every unit's score to zero. Adding one back means a new version plus a
+     * calculator, never a config-only change.
+     */
     static final Set<String> EXPECTED_CODES = Set.of(
-            "GOV01", "GOV02", "GOV03", "GOV04",
+            "GOV01", "GOV02",
             "DATA01", "DATA02", "DATA03", "DATA04",
-            "REP01", "REP02", "REP03", "REP04",
-            "CARE01", "CARE02", "CARE03", "CARE04", "CARE05",
-            "GRV01", "GRV02", "GRV03", "GRV04", "GRV05",
-            "ACT01", "ACT02", "ACT03", "ACT04", "ACT05",
-            "FIN01", "FIN02", "FIN03", "FIN04");
+            "REP01", "REP02",
+            "CARE01", "CARE02", "CARE03", "CARE04",
+            "GRV01", "GRV02", "GRV03", "GRV04",
+            "ACT01", "ACT02", "ACT03", "ACT04",
+            "FIN01", "FIN02", "FIN03");
 
     private final UnionUnitRepository units;
     private final MemberRepository members;
@@ -73,7 +89,12 @@ public class GpgKpiEngine {
     private final KpiSourceExclusionRepository sourceExclusions;
     private final SlaRuleRepository slaRules;
     private final BusinessCalendarDayRepository calendarDays;
+    private final KpiSourceEvidenceIndex evidenceIndex;
     private final CurrentUserService currentUser;
+    private KpiPopulationService populations;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setPopulations(KpiPopulationService populations) { this.populations = populations; }
 
     public GpgKpiEngine(UnionUnitRepository units, MemberRepository members,
                         MemberChangeRepository memberChanges, MonthlyReportRepository reports,
@@ -85,7 +106,7 @@ public class GpgKpiEngine {
                         KpiNoOccurrenceConfirmationRepository noOccurrence,
                         KpiAdjustmentRepository adjustments, KpiSourceExclusionRepository sourceExclusions,
                         SlaRuleRepository slaRules, BusinessCalendarDayRepository calendarDays,
-                        CurrentUserService currentUser) {
+                        KpiSourceEvidenceIndex evidenceIndex, CurrentUserService currentUser) {
         this.units = units;
         this.members = members;
         this.memberChanges = memberChanges;
@@ -104,6 +125,7 @@ public class GpgKpiEngine {
         this.sourceExclusions = sourceExclusions;
         this.slaRules = slaRules;
         this.calendarDays = calendarDays;
+        this.evidenceIndex = evidenceIndex;
         this.currentUser = currentUser;
     }
 
@@ -129,17 +151,8 @@ public class GpgKpiEngine {
         Set<String> excludedKeys = sourceExclusions.findByActiveTrue().stream()
                 .map(item -> exclusionKey(item.getSourceModule(), item.getSourceRecordKey()))
                 .collect(Collectors.toUnmodifiableSet());
-        List<SlaRule> reportSlas = slaRules.findByVersionId(version.getVersionId()).stream()
-                .filter(item -> "REPORT_SUBMISSION".equals(item.getSlaCode())).toList();
-        if (reportSlas.size() > 1) {
-            throw new IllegalStateException("Phiên bản KPI có nhiều SLA REPORT_SUBMISSION");
-        }
-        SlaRule reportSla = reportSlas.isEmpty() ? null : reportSlas.getFirst();
-        if (reportSla != null) validateReportSla(reportSla);
-        Map<LocalDate, Boolean> calendarOverrides = reportSla == null ? Map.of()
-                : calendarDays.findByBusinessCalendarIdAndCalendarDateBetween(reportSla.getBusinessCalendarId(),
-                        period.periodStart(), period.periodEnd().plusDays(60)).stream()
-                .collect(Collectors.toMap(BusinessCalendarDay::getCalendarDate, BusinessCalendarDay::isWorkingDay));
+        Map<String, SlaRule> slaByCode = slaRulesByCode(version);
+        Map<LocalDate, Boolean> calendarOverrides = calendarOverrides(slaByCode.values(), period);
 
         Long scopedUnitId = currentUser.scopedUnitId(requestedUnitId);
         List<UnionUnit> selected = scopedUnitId == null
@@ -149,11 +162,11 @@ public class GpgKpiEngine {
 
         List<UnitResult> calculatedResults = selected.stream()
                 .map(unit -> evaluateUnit(unit, period, cutoff, version, configured, classRules, penalties, gates,
-                        excludedKeys, reportSla, calendarOverrides))
+                        excludedKeys, slaByCode, calendarOverrides))
                 .sorted(rankingComparator())
                 .toList();
         List<UnitResult> results = rankOfficial(calculatedResults);
-        Summary summary = summarize(results);
+        Summary summary = summarize(results, version);
         return new Dashboard(version.getVersionId(), period.periodType(), period.periodStart(), period.periodEnd(),
                 cutoff, Instant.now(), summary, results);
     }
@@ -194,6 +207,39 @@ public class GpgKpiEngine {
         };
     }
 
+    /** One row per SLA code; the unique key on {@code sla_rules} makes a duplicate a configuration error. */
+    private Map<String, SlaRule> slaRulesByCode(KpiVersion version) {
+        Map<String, SlaRule> result = new HashMap<>();
+        for (SlaRule rule : slaRules.findByVersionId(version.getVersionId())) {
+            if (result.put(rule.getSlaCode(), rule) != null) {
+                throw new IllegalStateException("Phiên bản KPI có nhiều SLA " + rule.getSlaCode());
+            }
+        }
+        validateSla(result.get(REPORT_SLA), REPORT_SLA);
+        validateSla(result.get(MEMBER_CHANGE_SLA), MEMBER_CHANGE_SLA);
+        validateSla(result.get(GRIEVANCE_ACK_SLA), GRIEVANCE_ACK_SLA);
+        validateSla(result.get(CARE_INTAKE_SLA), CARE_INTAKE_SLA);
+        return Map.copyOf(result);
+    }
+
+    /**
+     * Non-working days for every calendar the version's SLA rules point at. The window reaches past the
+     * period on both sides because an SLA anchored near a boundary resolves outside it.
+     */
+    private Map<LocalDate, Boolean> calendarOverrides(Collection<SlaRule> rules, Period period) {
+        Set<String> calendarIds = rules.stream().map(SlaRule::getBusinessCalendarId)
+                .filter(this::present).collect(Collectors.toCollection(LinkedHashSet::new));
+        if (calendarIds.isEmpty()) return Map.of();
+        Map<LocalDate, Boolean> result = new HashMap<>();
+        for (String calendarId : calendarIds) {
+            calendarDays.findByBusinessCalendarIdAndCalendarDateBetween(calendarId,
+                            period.periodStart().minusDays(60), period.periodEnd().plusDays(60))
+                    .forEach(day -> result.merge(day.getCalendarDate(), day.isWorkingDay(),
+                            (left, right) -> left && right));
+        }
+        return Map.copyOf(result);
+    }
+
     private KpiVersion activeVersion(Period period) {
         List<KpiVersion> matching = versions.findAll(Sort.by(Sort.Direction.DESC, "effectiveFrom")).stream()
                 .filter(this::isSelectableVersion)
@@ -229,11 +275,17 @@ public class GpgKpiEngine {
     }
 
     private void validateReportSla(SlaRule rule) {
+        validateSla(rule, REPORT_SLA);
+    }
+
+    /** An absent SLA is tolerated — the KPIs that need it report missing data instead of guessing. */
+    private void validateSla(SlaRule rule, String slaCode) {
+        if (rule == null) return;
         boolean invalid = rule.getDurationValue() <= 0
                 || !("BUSINESS_DAY".equals(rule.getDurationUnit())
                 || "CALENDAR_DAY".equals(rule.getDurationUnit()))
                 || !present(rule.getBusinessCalendarId());
-        if (invalid) throw new IllegalStateException("SLA REPORT_SUBMISSION không hợp lệ");
+        if (invalid) throw new IllegalStateException("SLA " + slaCode + " không hợp lệ");
     }
 
     private void validateCatalog(List<KpiDefinition> configured) {
@@ -250,9 +302,12 @@ public class GpgKpiEngine {
                         BigDecimal::add)));
         boolean invalidGroupWeight = !groupWeights.keySet().equals(Set.copyOf(GROUP_ORDER))
                 || groupWeights.values().stream().anyMatch(weight -> weight.signum() <= 0);
-        if (configured.size() != 31 || !actual.equals(EXPECTED_CODES)
+        Set<String> expected = new HashSet<>(EXPECTED_CODES);
+        if (configured.stream().anyMatch(d -> "GPG-CD-KPI-V3".equals(d.getVersionId()))) expected.add("CARE05");
+        if (configured.size() != expected.size() || !actual.equals(expected)
                 || invalidDefinition || invalidGroupWeight || totalWeight.compareTo(BigDecimal.valueOf(100)) != 0) {
-            throw new IllegalStateException("Phiên bản KPI phải có đúng 31 mã theo đặc tả GPG");
+            throw new IllegalStateException("Phiên bản KPI phải có đúng " + EXPECTED_CODES.size()
+                    + " mã theo đặc tả GPG");
         }
     }
 
@@ -293,8 +348,8 @@ public class GpgKpiEngine {
                                     List<KpiDefinition> configured, List<KpiClassificationRule> classRules,
                                     Map<String, PenaltyRule> penalties,
                                     Map<String, KpiClassificationGate> gates, Set<String> excludedKeys,
-                                    SlaRule reportSla, Map<LocalDate, Boolean> calendarOverrides) {
-        UnitData data = load(unit, period, cutoff, excludedKeys, reportSla, calendarOverrides);
+                                    Map<String, SlaRule> slaByCode, Map<LocalDate, Boolean> calendarOverrides) {
+        UnitData data = load(unit, period, cutoff, excludedKeys, slaByCode, calendarOverrides);
         boolean canViewSensitive = currentUser.isAdmin();
         String runId = "KPI-" + version.getVersionId() + "-" + period.periodType() + "-"
                 + period.periodStart() + "-" + unit.getCode();
@@ -349,9 +404,7 @@ public class GpgKpiEngine {
                         && item.denominator().signum() > 0)
                 .map(item -> item.numerator().divide(item.denominator(), MC)).findFirst().orElse(null);
 
-        Long activeMemberCount = period.periodEnd().isBefore(data.asOf()) ? null
-                : data.members().stream()
-                .filter(item -> item.getMembershipStatus() == MembershipStatus.MEMBER).count();
+        Long activeMemberCount = period.periodEnd().isBefore(data.asOf()) ? null : (long) data.members().size();
         return new UnitResult(runId, unit.getId(), unit.getCode(), unit.getName(), activeMemberCount, runStatus,
                 dataQuality, rawBase, bonus, totalPenalty, rawFinal, rawClassification,
                 finalClassification, null, false, reportRate,
@@ -359,16 +412,15 @@ public class GpgKpiEngine {
     }
 
     private UnitData load(UnionUnit unit, Period period, Instant cutoff, Set<String> excludedKeys,
-                          SlaRule reportSla, Map<LocalDate, Boolean> calendarOverrides) {
+                          Map<String, SlaRule> slaByCode, Map<LocalDate, Boolean> calendarOverrides) {
         Long unitId = unit.getId();
         LocalDate cutoffDate = LocalDate.ofInstant(cutoff, BUSINESS_ZONE);
         LocalDate periodAsOf = cutoffDate.isAfter(period.periodEnd()) ? period.periodEnd() : cutoffDate;
-        var activeMembers = members.findAll(Specs.nullSafe(Specs.allOf(
-                        Specs.unitScope(unitId), Specs.eq("employmentStatus", EmploymentStatus.ACTIVE),
-                        Specs.eq("membershipStatus", MembershipStatus.MEMBER))))
+        // The whole active roster, not only union members: DATA04 needs the non-members as its denominator.
+        var employees = members.findAll(Specs.nullSafe(Specs.allOf(
+                        Specs.unitScope(unitId), Specs.eq("employmentStatus", EmploymentStatus.ACTIVE))))
                 .stream().filter(item -> beforeCutoff(item, cutoff))
                 .filter(item -> item.getStartWorkDate() == null || !item.getStartWorkDate().isAfter(periodAsOf))
-                .filter(item -> item.getJoinDate() == null || !item.getJoinDate().isAfter(periodAsOf))
                 .filter(item -> included(excludedKeys, "DOAN_VIEN", item.getEmployeeCode())).toList();
         var changes = memberChanges.findAll(Specs.nullSafe(Specs.allOf(
                         Specs.unitScopeVia("member", unitId), between("effectiveDate", period))))
@@ -391,9 +443,9 @@ public class GpgKpiEngine {
                 .filter(item -> !item.getEventDate().isBefore(period.periodStart())
                         || item.getStatus() != WorkStatus.COMPLETED)
                 .filter(item -> included(excludedKeys, "CHAM_SOC_NLD", item.getRecordCode()))
-                .filter(item -> item.getStatus() != WorkStatus.CANCELLED).toList();
+                .filter(item -> item.getStatus() != WorkStatus.CANCELLED || !present(item.getCancellationReason())).toList();
         var grievanceRows = cases.findAll(Specs.nullSafe(Specs.allOf(
-                        Specs.unitScope(unitId), (root, query, cb) -> cb.lessThanOrEqualTo(root.get("receivedDate"), period.periodEnd()))))
+                        Specs.unitScope(unitId), Specs.onOrBefore("receivedDate", period.periodEnd()))))
                 .stream().filter(item -> beforeCutoff(item, cutoff))
                 .filter(item -> item.getReceivedDate() != null && !item.getReceivedDate().isAfter(periodAsOf))
                 .filter(item -> included(excludedKeys, "SO_KIEN_NGHI", item.getCaseCode())).toList();
@@ -402,7 +454,9 @@ public class GpgKpiEngine {
                 .stream().filter(item -> beforeCutoff(item, cutoff))
                 .filter(item -> item.getEventDate() != null && !item.getEventDate().isAfter(periodAsOf))
                 .filter(item -> included(excludedKeys, "HOAT_DONG", item.getActivityCode()))
-                .filter(item -> item.getStatus() == ActivityStatus.APPROVED
+                .filter(item -> item.getStatus() == ActivityStatus.PLANNED
+                        || item.getStatus() == ActivityStatus.CANCELLED && !present(item.getCancellationReason())
+                        || item.getStatus() == ActivityStatus.APPROVED
                         || item.getStatus() == ActivityStatus.IN_PROGRESS
                         || item.getStatus() == ActivityStatus.COMPLETED).toList();
         var financeRows = finance.findAll(Specs.nullSafe(Specs.allOf(
@@ -411,20 +465,51 @@ public class GpgKpiEngine {
                 .filter(item -> item.getTransactionDate() != null && !item.getTransactionDate().isAfter(periodAsOf))
                 .filter(item -> included(excludedKeys, "TAI_CHINH_CD", item.getEntryCode())).toList();
         boolean governanceSourceExcluded = !included(excludedKeys, "DM_CONG_DOAN", unit.getCode());
-        return new UnitData(activeMembers, changes, reportRows, careRows, grievanceRows, activityRows, financeRows,
-                cutoff, period, reportSla, calendarOverrides, governanceSourceExcluded);
+        return new UnitData(employees, changes, reportRows, careRows, grievanceRows, activityRows, financeRows,
+                evidenceIndex.welfareWithDocuments(ids(careRows, WelfareRecord::getId)),
+                evidenceIndex.activitiesWithMedia(ids(activityRows, UnionActivity::getId)),
+                evidenceIndex.financeWithDocuments(ids(financeRows, FinanceEntry::getId)),
+                careWithFinanceEntry(careRows),
+                cutoff, period, slaByCode, calendarOverrides, governanceSourceExcluded);
+    }
+
+    /**
+     * Care records whose approval produced the matching finance entry. FinanceService derives that entry
+     * code from the care record id, so the reconciliation is deterministic without a foreign key.
+     */
+    private Set<Long> careWithFinanceEntry(List<WelfareRecord> rows) {
+        Map<String, Long> byCode = new HashMap<>();
+        rows.stream().filter(item -> item.getId() != null)
+                .forEach(item -> byCode.putIfAbsent(welfareEntryCode(item.getId()), item.getId()));
+        if (byCode.isEmpty()) return Set.of();
+        return finance.findAll(Specs.nullSafe(Specs.<FinanceEntry>in("entryCode", byCode.keySet()))).stream()
+                .map(item -> byCode.get(item.getEntryCode()))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
+    static String welfareEntryCode(Long welfareRecordId) {
+        return "PC-CL-" + welfareRecordId;
+    }
+
+    private <T> Set<Long> ids(List<T> rows, Function<T, Long> id) {
+        return rows.stream().map(id).filter(Objects::nonNull).collect(Collectors.toUnmodifiableSet());
     }
 
     private boolean noOccurrenceEligible(String kpiCode, Period period, UnitData data) {
         return switch (kpiCode) {
             case "DATA02" -> data.memberChanges().isEmpty();
-            case "CARE01", "CARE02", "CARE03", "CARE04", "CARE05" -> data.periodWelfare().isEmpty();
-            case "GRV01", "GRV04", "GRV05" -> data.periodCases(period).isEmpty();
+            case "DATA03" -> data.employees().isEmpty();
+            case "REP02" -> data.reports().isEmpty();
+            case "CARE01", "CARE03", "CARE04" -> data.periodWelfare().isEmpty();
+            case "CARE02" -> data.dueWelfare().isEmpty();
+            case "GRV01", "GRV04" -> data.periodCases(period).isEmpty();
             case "GRV02" -> data.dueCases(period).isEmpty();
             case "GRV03" -> data.closedCases(period).isEmpty();
-            case "ACT01", "ACT02", "ACT03", "ACT04", "ACT05" -> data.activities().isEmpty();
-            case "FIN01", "FIN02" -> data.finance().isEmpty();
-            case "FIN04" -> data.activities().isEmpty() && data.finance().isEmpty();
+            case "ACT01", "ACT02", "ACT03", "ACT04" -> data.activities().isEmpty();
+            case "FIN01" -> data.finance().isEmpty();
+            case "FIN02" -> data.periodWelfare().isEmpty();
+            case "FIN03" -> data.activities().isEmpty();
             default -> false;
         };
     }
@@ -507,55 +592,113 @@ public class GpgKpiEngine {
     }
 
     private Metric metric(String code, UnionUnit unit, Period period, UnitData data) {
+        if (populations != null && period.periodType() == PeriodType.YEAR
+                && Set.of("DATA01", "DATA03", "DATA04").contains(code)) {
+            var population = populations.approved(unit.getId(), period.year());
+            if (population != null) {
+                var rows = population.members().stream().filter(p -> switch (code) {
+                    case "DATA01" -> p.unionMember();
+                    case "DATA03" -> p.identityDeclared();
+                    default -> true;
+                }).toList();
+                Predicate<KpiPopulationService.Person> valid = p -> switch (code) {
+                    case "DATA01" -> p.profileComplete();
+                    case "DATA03" -> p.identityUnique();
+                    default -> p.unionMember();
+                };
+                return complete(BigDecimal.valueOf(rows.stream().filter(valid).count()), BigDecimal.valueOf(rows.size()),
+                        "Tính từ danh sách nhân sự cuối năm đã phê duyệt, bản " + population.revision(),
+                        List.of(new SourceRef("KPI_POPULATION", String.valueOf(population.id()), "population", true, true)), false);
+            }
+        }
+        if ((code.startsWith("CARE") && data.welfare().stream().anyMatch(w -> w.getStatus() == WorkStatus.CANCELLED))
+                || (code.startsWith("ACT") && data.activities().stream().anyMatch(a -> a.getStatus() == ActivityStatus.CANCELLED))) {
+            return failed(null, null, "Có hồ sơ hủy thiếu lý do; cần đối soát trước khi tính điểm.", List.of(), false);
+        }
         return switch (code) {
-            case "GOV01" -> data.governanceSourceExcluded()
-                    ? missing("Hồ sơ pháp lý mẫu khởi tạo đã bị loại khỏi nguồn KPI; cần nhập hồ sơ CĐCS thật.")
-                    : partial(count(present(unit.getDecisionNumber()) && unit.getLegalStatus() == LegalStatus.ACTIVE
-                            && unit.getTermStart() != null && unit.getTermEnd() != null), null,
-                    "Thiếu danh mục hồ sơ bắt buộc, hiệu lực và trạng thái phê duyệt.", refs("DM_CONG_DOAN", unit.getId()), false);
-            case "GOV02" -> data.governanceSourceExcluded()
-                    ? missing("Dữ liệu BCH mẫu khởi tạo đã bị loại khỏi nguồn KPI; cần nhập BCH và phân công thật.")
-                    : partial(count(present(unit.getChairperson())), null,
-                    "Chưa có danh mục vị trí BCH và bản ghi phân công nhiệm vụ có hiệu lực.", refs("DM_CONG_DOAN", unit.getId()), false);
-            case "GOV03" -> missing("Chưa có nguồn yêu cầu/hoàn thành tập huấn cán bộ.");
-            case "GOV04" -> missing("Chưa có sổ thay đổi tổ chức và thời điểm cập nhật.");
+            case "GOV01" -> governanceLegalProfile(unit, data);
+            case "GOV02" -> governanceLeadership(unit, data);
             case "DATA01" -> memberCompleteness(data);
-            case "DATA02" -> memberChangeTimeliness(data.memberChanges());
-            case "DATA03" -> partial(BigDecimal.valueOf(data.members().stream().map(Member::getEmployeeCode)
-                            .filter(Objects::nonNull).map(value -> value.toLowerCase(Locale.ROOT)).distinct().count()),
-                    BigDecimal.valueOf(data.members().size()),
-                    "Có khóa duy nhất mã nhân viên nhưng chưa có kết quả kiểm tra lỗi/trùng theo snapshot HR.",
-                    refs("DOAN_VIEN", data.members(), Member::getId), false);
-            case "DATA04" -> partial(BigDecimal.valueOf(data.members().stream()
-                            .filter(item -> item.getMembershipStatus() == MembershipStatus.MEMBER).count()), null,
-                    "Thiếu mẫu số CBNV đủ điều kiện từ snapshot HR tại ngày chốt.",
-                    refs("DOAN_VIEN", data.members(), Member::getId,
-                            item -> item.getMembershipStatus() == MembershipStatus.MEMBER), false);
+            case "DATA02" -> memberChangeTimeliness(data);
+            case "DATA03" -> identityUniqueness(data);
+            case "DATA04" -> unionParticipation(data);
             case "REP01" -> reportTimeliness(unit, data);
-            case "REP02" -> missing("Báo cáo không có trường số liệu cấu trúc và kết quả đối soát nguồn.");
-            case "REP03" -> reportPlan(data.reports());
-            case "REP04" -> missing("Chưa có PHEDUYET_LOG hoặc trạng thái trả bổ sung.");
-            case "CARE01" -> absentAware(data.periodWelfare(), "Chưa có received_at/verified_at và nhật ký xác minh.", "CHAM_SOC_NLD", true);
-            case "CARE02" -> careOnTime(data.periodWelfare());
-            case "CARE03" -> careClosure(data.periodWelfare());
-            case "CARE04" -> careCompliance(data.periodWelfare());
-            case "CARE05" -> absentAware(data.periodWelfare(), "Chưa có xác nhận NLĐ đã nhận và phản hồi hài lòng gắn hồ sơ.", "CHAM_SOC_NLD", true);
-            case "GRV01" -> grievanceAcknowledgement(data.periodCases(period));
+            case "REP02" -> reportContent(data.reports());
+            case "CARE01" -> careIntakeTimeliness(data);
+            case "CARE02" -> careOnTime(data);
+            case "CARE03" -> careClosure(data);
+            case "CARE04" -> careCompliance(data.policyWelfare());
+            case "CARE05" -> careCoverage(unit, period, data);
+            case "GRV01" -> grievanceAcknowledgement(data, period);
             case "GRV02" -> grievanceSla(data.dueCases(period));
             case "GRV03" -> grievanceClosure(data.closedCases(period));
-            case "GRV04" -> absentAware(data.periodCases(period), "Chưa có trường NLĐ đồng ý kết quả.", "SO_KIEN_NGHI", true);
-            case "GRV05" -> absentAware(data.periodCases(period), "Chưa có khảo sát hài lòng gắn kiến nghị và token chống trùng.", "SO_KIEN_NGHI", true);
+            case "GRV04" -> grievanceResolution(data.periodCases(period), data.periodAsOf());
             case "ACT01" -> activityCompletion(data.activities());
             case "ACT02" -> activityParticipation(data.activities());
-            case "ACT03" -> absentAware(data.activities(), "Mục tiêu là văn bản tự do; chưa có mục tiêu đã duyệt và kết quả từng mục tiêu.", "HOAT_DONG", false);
-            case "ACT04" -> activityReport(data.activities());
-            case "ACT05" -> activitySatisfaction(data.activities());
-            case "FIN01" -> financeDocuments(data.finance());
-            case "FIN02" -> absentAware(data.finance(), "Chưa có due_at, paid_at/posted_at và trạng thái hoàn tất giao dịch.", "TAI_CHINH_CD", false);
-            case "FIN03" -> missing("Chưa có snapshot số dư, sao kê/biên bản đối soát và sai số cho phép.");
-            case "FIN04" -> budgetCompliance(data.activities());
+            case "ACT03" -> activityReport(data);
+            case "ACT04" -> activitySatisfaction(data.activities());
+            case "FIN01" -> financeDocuments(data);
+            case "FIN02" -> careFinanceReconciliation(data);
+            case "FIN03" -> budgetCompliance(data.activities());
             default -> throw new IllegalStateException("Không có calculator cho " + code);
         };
+    }
+
+    private Metric careCoverage(UnionUnit unit, Period period, UnitData data) {
+        var population = populations == null ? null : populations.approved(unit.getId(), period.year());
+        if (population == null) return missing("Cần danh sách nhân sự cuối năm được phê duyệt để xác định mẫu số chăm lo.");
+        if (data.periodWelfare().stream().anyMatch(w -> w.getStatus() == WorkStatus.CANCELLED
+                && !present(w.getCancellationReason()))) {
+            return failed(null, null, "Hồ sơ chăm lo hủy nhưng thiếu lý do; cần đối soát trước khi tính điểm.",
+                    refs("CHAM_SOC_NLD", data.periodWelfare(), WelfareRecord::getId, w -> false), false);
+        }
+        Set<Long> roster = population.members().stream().map(KpiPopulationService.Person::memberId).collect(Collectors.toSet());
+        var birthdays = data.periodWelfare().stream().filter(w -> w.getWelfareType() == WelfareType.BIRTHDAY).toList();
+        if (birthdays.stream().anyMatch(w -> w.getMemberId() == null || !roster.contains(w.getMemberId())))
+            return failed(null, BigDecimal.valueOf(roster.size()), "Hồ sơ sinh nhật chưa liên kết nhân sự trong danh sách cuối năm.", refs("CHAM_SOC_NLD", birthdays, WelfareRecord::getId, w -> false), false);
+        Predicate<WelfareRecord> completed = w -> w.getStatus() == WorkStatus.COMPLETED
+                && w.getCompletedAt() != null && !w.getCompletedAt().isAfter(data.cutoff())
+                && !w.getCompletedAt().atZone(BUSINESS_ZONE).toLocalDate().isAfter(data.periodAsOf());
+        long birthdayDone = birthdays.stream().filter(completed).map(WelfareRecord::getMemberId).distinct().count();
+        var other = data.periodWelfare().stream().filter(w -> w.getWelfareType() != WelfareType.BIRTHDAY).toList();
+        List<SourceRef> references = new ArrayList<>(refs("CHAM_SOC_NLD", other, WelfareRecord::getId, completed));
+        for (var person : population.members())
+            references.add(new SourceRef("KPI_POPULATION", population.id() + ":" + person.memberId(), "population", false, true, EvidenceRole.DENOMINATOR));
+        Set<Long> counted = new HashSet<>();
+        for (var birthday : birthdays.stream().sorted(Comparator.comparing(WelfareRecord::getId)).toList()) {
+            boolean countedNow = completed.test(birthday) && counted.add(birthday.getMemberId());
+            references.add(new SourceRef("CHAM_SOC_NLD", String.valueOf(birthday.getId()), "welfare", countedNow, true,
+                    countedNow ? EvidenceRole.NUMERATOR : EvidenceRole.EXCLUDED));
+        }
+        return complete(BigDecimal.valueOf(birthdayDone + other.stream().filter(completed).count()),
+                BigDecimal.valueOf(roster.size() + other.size()),
+                "Sinh nhật đếm người duy nhất; năm nhóm chăm lo khác đếm từng sự việc. Mẫu số = nhân sự cuối năm + sự việc khác.",
+                references, false);
+    }
+
+    private Metric governanceLegalProfile(UnionUnit unit, UnitData data) {
+        if (data.governanceSourceExcluded()) {
+            return missing("Hồ sơ pháp lý mẫu khởi tạo đã bị loại khỏi nguồn KPI; cần nhập hồ sơ CĐCS thật.");
+        }
+        LocalDate asOf = data.periodAsOf();
+        boolean valid = present(unit.getDecisionNumber()) && unit.getLegalStatus() == LegalStatus.ACTIVE
+                && unit.getTermStart() != null && unit.getTermEnd() != null
+                && !unit.getTermStart().isAfter(asOf) && !unit.getTermEnd().isBefore(asOf);
+        return complete(count(valid), BigDecimal.ONE,
+                valid ? "Có số quyết định, trạng thái pháp lý hiệu lực và nhiệm kỳ phủ ngày chốt."
+                        : "Thiếu số quyết định, trạng thái pháp lý hoặc nhiệm kỳ không phủ ngày chốt.",
+                refs("DM_CONG_DOAN", unit.getId(), valid), false);
+    }
+
+    private Metric governanceLeadership(UnionUnit unit, UnitData data) {
+        if (data.governanceSourceExcluded()) {
+            return missing("Dữ liệu BCH mẫu khởi tạo đã bị loại khỏi nguồn KPI; cần nhập BCH và đầu mối thật.");
+        }
+        boolean valid = present(unit.getChairperson()) && present(unit.getContactPerson());
+        return complete(count(valid), BigDecimal.ONE,
+                valid ? "Đã khai chủ tịch/BCH và đầu mối liên hệ của CĐCS."
+                        : "Thiếu chủ tịch/BCH hoặc đầu mối liên hệ của CĐCS.",
+                refs("DM_CONG_DOAN", unit.getId(), valid), false);
     }
 
     private Metric memberCompleteness(UnitData data) {
@@ -568,6 +711,298 @@ public class GpgKpiEngine {
         return complete(BigDecimal.valueOf(complete), BigDecimal.valueOf(rows.size()),
                 complete + "/" + rows.size() + " hồ sơ đoàn viên đang hoạt động đủ trường cốt lõi.",
                 refs("DOAN_VIEN", rows, Member::getId, isComplete), false);
+    }
+
+    private Metric memberChangeTimeliness(UnitData data) {
+        SlaRule rule = data.slaRule(MEMBER_CHANGE_SLA);
+        List<MemberChange> rows = data.memberChanges();
+        if (rule == null) {
+            return partial(null, null, "Phiên bản KPI chưa có SLA MEMBER_CHANGE.",
+                    refs("DOAN_VIEN", rows, MemberChange::getId, ignored -> false), false);
+        }
+        Predicate<MemberChange> isTimely = item -> item.getEffectiveDate() != null && item.getCreatedAt() != null
+                && !item.getCreatedAt().atZone(BUSINESS_ZONE).toLocalDate()
+                .isAfter(slaDeadline(item.getEffectiveDate(), rule, data.calendarOverrides()));
+        long timely = rows.stream().filter(isTimely).count();
+        return complete(BigDecimal.valueOf(timely), BigDecimal.valueOf(rows.size()),
+                timely + "/" + rows.size() + " biến động được ghi nhận trong "
+                        + rule.getDurationValue() + " ngày làm việc kể từ ngày phát sinh.",
+                refs("DOAN_VIEN", rows, MemberChange::getId, isTimely), false);
+    }
+
+    /**
+     * Duplicate identities inside one unit. The employee code is unique by database constraint, so the check
+     * that is worth scoring is the one the database does not enforce: the same CCCD or phone on two people.
+     */
+    private Metric identityUniqueness(UnitData data) {
+        List<Member> declared = data.employees().stream()
+                .filter(item -> present(item.getNationalId()) || present(item.getPhone())).toList();
+        Map<String, Long> nationalIds = normalizedCounts(data.employees(), Member::getNationalId);
+        Map<String, Long> phones = normalizedCounts(data.employees(), Member::getPhone);
+        Predicate<Member> unique = item -> uniqueValue(nationalIds, item.getNationalId())
+                && uniqueValue(phones, item.getPhone());
+        long distinct = declared.stream().filter(unique).count();
+        return complete(BigDecimal.valueOf(distinct), BigDecimal.valueOf(declared.size()),
+                distinct + "/" + declared.size() + " hồ sơ có CCCD và số điện thoại không trùng trong đơn vị.",
+                refs("DOAN_VIEN", declared, Member::getId, unique), false);
+    }
+
+    private Metric unionParticipation(UnitData data) {
+        if (data.period().periodEnd().isBefore(data.asOf())) {
+            return missing("Thiếu snapshot nhân sự tại ngày chốt của kỳ lịch sử; không dùng trạng thái hiện tại để chấm ngược kỳ.");
+        }
+        List<Member> employees = data.employees();
+        Predicate<Member> joined = item -> item.getMembershipStatus() == MembershipStatus.MEMBER;
+        long count = employees.stream().filter(joined).count();
+        return complete(BigDecimal.valueOf(count), BigDecimal.valueOf(employees.size()),
+                count + "/" + employees.size() + " NLĐ đang làm việc đã là đoàn viên.",
+                refs("DOAN_VIEN", employees, Member::getId, joined), false);
+    }
+
+    private Map<String, Long> normalizedCounts(List<Member> rows, Function<Member, String> field) {
+        return rows.stream().map(field).filter(this::present)
+                .map(value -> value.trim().toLowerCase(Locale.ROOT))
+                .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
+    }
+
+    private boolean uniqueValue(Map<String, Long> counts, String value) {
+        return !present(value) || counts.getOrDefault(value.trim().toLowerCase(Locale.ROOT), 0L) <= 1;
+    }
+
+    private Metric reportTimeliness(UnionUnit unit, UnitData data) {
+        SlaRule rule = data.slaRule(REPORT_SLA);
+        if (rule == null) {
+            return partial(null, null, "Phiên bản KPI chưa có SLA REPORT_SUBMISSION.",
+                    refs("BAO_CAO_DINH_KY", data.reports(), MonthlyReport::getId, ignored -> false), false);
+        }
+        List<YearMonth> dueMonths = dueReportMonths(data);
+        if (dueMonths.isEmpty()) {
+            // Reading the dashboard mid-period: nothing is late yet, but nothing is proven on time either.
+            return partial(BigDecimal.ZERO, BigDecimal.ZERO,
+                    "Chưa có tháng nào trong kỳ đến hạn nộp báo cáo tính đến ngày chốt.", List.of(), false);
+        }
+        List<MonthlyReport> invalidReports = data.reports().stream()
+                .filter(item -> item.getReportMonth() != null
+                        && dueMonths.contains(YearMonth.from(item.getReportMonth())))
+                .filter(item -> item.getSubmittedAt() == null).toList();
+        if (!invalidReports.isEmpty()) {
+            return failed(null, BigDecimal.valueOf(dueMonths.size()),
+                    invalidReports.size() + " báo cáo đã ở trạng thái nộp/duyệt nhưng thiếu submitted_at.",
+                    refs("BAO_CAO_DINH_KY", invalidReports, MonthlyReport::getId, ignored -> false), false);
+        }
+        Predicate<MonthlyReport> isOnTime = item -> {
+            if (item.getSubmittedAt() == null || item.getReportMonth() == null
+                    || (item.getStatus() != ReportStatus.SUBMITTED && item.getStatus() != ReportStatus.APPROVED)) return false;
+            YearMonth month = YearMonth.from(item.getReportMonth());
+            if (!dueMonths.contains(month)) return false;
+            LocalDate deadline = reportDeadline(month, rule, data.calendarOverrides());
+            return !item.getSubmittedAt().atZone(BUSINESS_ZONE).toLocalDate().isAfter(deadline);
+        };
+        Map<YearMonth, MonthlyReport> reportsByMonth = data.reports().stream()
+                .filter(item -> item.getReportMonth() != null)
+                .collect(Collectors.toMap(item -> YearMonth.from(item.getReportMonth()), Function.identity(),
+                        (left, right) -> left.getUpdatedAt() != null && right.getUpdatedAt() != null
+                                && left.getUpdatedAt().isAfter(right.getUpdatedAt()) ? left : right));
+        long onTime = data.reports().stream().filter(isOnTime).count();
+        List<SourceRef> dueEvidence = dueMonths.stream().map(month -> {
+            MonthlyReport report = reportsByMonth.get(month);
+            if (report != null) {
+                return new SourceRef("BAO_CAO_DINH_KY", String.valueOf(report.getId()),
+                        "monthly-report", isOnTime.test(report), true);
+            }
+            return new SourceRef("BAO_CAO_DINH_KY", unit.getId() + ":" + month,
+                    "report-obligation", false, true);
+        }).toList();
+        return complete(BigDecimal.valueOf(onTime), BigDecimal.valueOf(dueMonths.size()),
+                onTime + "/" + dueMonths.size() + " báo cáo tháng được nộp trong SLA cấu hình.",
+                dueEvidence, false);
+    }
+
+    private Metric reportContent(List<MonthlyReport> rows) {
+        Predicate<MonthlyReport> hasContent = item -> present(item.getPlanNextMonth())
+                && present(item.getSupportRequest());
+        long filled = rows.stream().filter(hasContent).count();
+        return complete(BigDecimal.valueOf(filled), BigDecimal.valueOf(rows.size()),
+                filled + "/" + rows.size() + " báo cáo đã nộp có kế hoạch kỳ sau và đề xuất hỗ trợ.",
+                refs("BAO_CAO_DINH_KY", rows, MonthlyReport::getId, hasContent), false);
+    }
+
+    private Metric careIntakeTimeliness(UnitData data) {
+        SlaRule rule = data.slaRule(CARE_INTAKE_SLA);
+        List<WelfareRecord> rows = data.periodWelfare();
+        if (rule == null) {
+            return partial(null, null, "Phiên bản KPI chưa có SLA CARE_NORMAL.",
+                    refs("CHAM_SOC_NLD", rows, WelfareRecord::getId, ignored -> false), true);
+        }
+        Predicate<WelfareRecord> onTime = item -> item.getCreatedAt() != null && item.getEventDate() != null
+                && !item.getCreatedAt().atZone(BUSINESS_ZONE).toLocalDate()
+                .isAfter(slaDeadline(item.getEventDate(), rule, data.calendarOverrides()));
+        long recorded = rows.stream().filter(onTime).count();
+        return complete(BigDecimal.valueOf(recorded), BigDecimal.valueOf(rows.size()),
+                recorded + "/" + rows.size() + " hồ sơ chăm lo được ghi nhận trong "
+                        + rule.getDurationValue() + " ngày làm việc kể từ ngày phát sinh.",
+                refs("CHAM_SOC_NLD", rows, WelfareRecord::getId, onTime), true);
+    }
+
+    private Metric careOnTime(UnitData data) {
+        List<WelfareRecord> rows = data.dueWelfare();
+        Predicate<WelfareRecord> isOnTime = item -> item.getStatus() == WorkStatus.COMPLETED
+                && item.getCompletedAt() != null && item.getDeadline() != null
+                && !item.getCompletedAt().atZone(BUSINESS_ZONE).toLocalDate().isAfter(item.getDeadline());
+        long completed = rows.stream().filter(isOnTime).count();
+        return complete(BigDecimal.valueOf(completed), BigDecimal.valueOf(rows.size()),
+                completed + "/" + rows.size() + " hồ sơ chăm lo đã đến hạn được hoàn tất trước hạn.",
+                refs("CHAM_SOC_NLD", rows, WelfareRecord::getId, isOnTime), true);
+    }
+
+    private Metric careClosure(UnitData data) {
+        List<WelfareRecord> rows = data.completedWelfare();
+        Predicate<WelfareRecord> isClosed = item -> item.getPolicyId() != null
+                && item.getDocumentStatus() == DocumentStatus.COMPLETE
+                && item.getReceiptStatus() == DocumentStatus.COMPLETE && Boolean.TRUE.equals(item.getHasImage())
+                && data.welfareWithFiles().contains(item.getId());
+        long closed = rows.stream().filter(isClosed).count();
+        return complete(BigDecimal.valueOf(closed), BigDecimal.valueOf(rows.size()),
+                closed + "/" + rows.size() + " hồ sơ hoàn thành có chính sách, chứng từ, biên nhận và tệp đính kèm thật.",
+                refs("CHAM_SOC_NLD", rows, WelfareRecord::getId, isClosed), true);
+    }
+
+    private Metric careCompliance(List<WelfareRecord> rows) {
+        Predicate<WelfareRecord> isCompliant = item -> item.getAmount() != null
+                && item.getStandardAmount() != null && item.getAmount().compareTo(item.getStandardAmount()) == 0;
+        long compliant = rows.stream().filter(isCompliant).count();
+        return complete(BigDecimal.valueOf(compliant), BigDecimal.valueOf(rows.size()),
+                compliant + "/" + rows.size() + " hồ sơ có chính sách được chi đúng định mức đã duyệt.",
+                refs("CHAM_SOC_NLD", rows, WelfareRecord::getId, isCompliant), true);
+    }
+
+    private Metric careFinanceReconciliation(UnitData data) {
+        List<WelfareRecord> rows = data.approvedWelfare();
+        Predicate<WelfareRecord> reconciled = item -> data.careWithFinanceEntry().contains(item.getId());
+        long matched = rows.stream().filter(reconciled).count();
+        return complete(BigDecimal.valueOf(matched), BigDecimal.valueOf(rows.size()),
+                matched + "/" + rows.size() + " hồ sơ chăm lo đã duyệt có giao dịch chi tương ứng trong sổ tài chính.",
+                refs("CHAM_SOC_NLD", rows, WelfareRecord::getId, reconciled), true);
+    }
+
+    private Metric grievanceAcknowledgement(UnitData data, Period period) {
+        SlaRule rule = data.slaRule(GRIEVANCE_ACK_SLA);
+        List<LaborCase> rows = data.periodCases(period);
+        if (rule == null) {
+            return partial(null, null, "Phiên bản KPI chưa có SLA GRV_ACK.",
+                    refs("SO_KIEN_NGHI", rows, LaborCase::getId, ignored -> false), true);
+        }
+        Predicate<LaborCase> recorded = item -> item.getCreatedAt() != null && item.getReceivedDate() != null
+                && !item.getCreatedAt().atZone(BUSINESS_ZONE).toLocalDate()
+                .isAfter(slaDeadline(item.getReceivedDate(), rule, data.calendarOverrides()));
+        long inSla = rows.stream().filter(recorded).count();
+        return complete(BigDecimal.valueOf(inSla), BigDecimal.valueOf(rows.size()),
+                inSla + "/" + rows.size() + " kiến nghị được ghi sổ trong "
+                        + rule.getDurationValue() + " ngày làm việc kể từ ngày tiếp nhận.",
+                refs("SO_KIEN_NGHI", rows, LaborCase::getId, recorded), true);
+    }
+
+    private Metric grievanceSla(List<LaborCase> rows) {
+        Predicate<LaborCase> completedOnTime = item -> item.getStatus() == CaseStatus.CLOSED
+                && item.getApprovedAt() != null && item.getDeadline() != null
+                && !item.getApprovedAt().atZone(BUSINESS_ZONE).toLocalDate().isAfter(item.getDeadline());
+        long onTime = rows.stream().filter(completedOnTime).count();
+        return complete(BigDecimal.valueOf(onTime), BigDecimal.valueOf(rows.size()),
+                onTime + "/" + rows.size() + " kiến nghị đã đến hạn được đóng trong hạn xử lý.",
+                refs("SO_KIEN_NGHI", rows, LaborCase::getId, completedOnTime), true);
+    }
+
+    private Metric grievanceClosure(List<LaborCase> rows) {
+        Predicate<LaborCase> validClosure = this::isValidClosedCase;
+        long valid = rows.stream().filter(validClosure).count();
+        return complete(BigDecimal.valueOf(valid), BigDecimal.valueOf(rows.size()),
+                valid + "/" + rows.size() + " kiến nghị đã đóng có kết quả, ngày phản hồi và người duyệt đóng hợp lệ.",
+                refs("SO_KIEN_NGHI", rows, LaborCase::getId, validClosure), true);
+    }
+
+    private Metric grievanceResolution(List<LaborCase> rows, LocalDate asOf) {
+        Predicate<LaborCase> resolved = item -> item.getStatus() == CaseStatus.CLOSED && item.getApprovedAt() != null
+                && !item.getApprovedAt().atZone(BUSINESS_ZONE).toLocalDate().isAfter(asOf);
+        long closed = rows.stream().filter(resolved).count();
+        return complete(BigDecimal.valueOf(closed), BigDecimal.valueOf(rows.size()),
+                closed + "/" + rows.size() + " kiến nghị phát sinh trong kỳ đã được giải quyết và đóng.",
+                refs("SO_KIEN_NGHI", rows, LaborCase::getId, resolved), true);
+    }
+
+    private boolean isValidClosedCase(LaborCase item) {
+        if (item.getReceivedDate() == null || !present(item.getResultText()) || item.getResponseDate() == null
+                || !present(item.getApprovedBy()) || item.getApprovedAt() == null) return false;
+        LocalDate approvedDate = item.getApprovedAt().atZone(BUSINESS_ZONE).toLocalDate();
+        return !item.getResponseDate().isBefore(item.getReceivedDate())
+                && !approvedDate.isBefore(item.getReceivedDate())
+                && !approvedDate.isBefore(item.getResponseDate());
+    }
+
+    private Metric activityCompletion(List<UnionActivity> rows) {
+        Predicate<UnionActivity> isCompleted = item -> item.getStatus() == ActivityStatus.COMPLETED;
+        long completed = rows.stream().filter(isCompleted).count();
+        return complete(BigDecimal.valueOf(completed), BigDecimal.valueOf(rows.size()),
+                completed + "/" + rows.size() + " chương trình đã duyệt/đang chạy trong kỳ được hoàn thành.",
+                refs("HOAT_DONG", rows, UnionActivity::getId, isCompleted), false);
+    }
+
+    private Metric activityParticipation(List<UnionActivity> rows) {
+        long invited = rows.stream().mapToLong(item -> safeInt(item.getInvitedCount())).sum();
+        long participants = rows.stream().mapToLong(item -> safeInt(item.getParticipantCount())).sum();
+        return complete(BigDecimal.valueOf(participants), BigDecimal.valueOf(invited),
+                participants + "/" + invited + " lượt tham gia trên số được mời.",
+                refs("HOAT_DONG", rows, UnionActivity::getId,
+                        item -> safeInt(item.getParticipantCount()) > 0), false);
+    }
+
+    private Metric activityReport(UnitData data) {
+        List<UnionActivity> rows = data.completedActivities();
+        Predicate<UnionActivity> validReport = item -> Boolean.TRUE.equals(item.getReportCompleted())
+                && item.getDocumentStatus() == DocumentStatus.COMPLETE
+                && data.activitiesWithMedia().contains(item.getId());
+        long complete = rows.stream().filter(validReport).count();
+        return complete(BigDecimal.valueOf(complete), BigDecimal.valueOf(rows.size()),
+                complete + "/" + rows.size() + " chương trình đã hoàn thành có báo cáo, chứng từ và tệp minh chứng thật.",
+                refs("HOAT_DONG", rows, UnionActivity::getId, validReport), false);
+    }
+
+    /**
+     * Usefulness is captured on a 0-5 scale, so the metric is the average over that maximum rather than the
+     * 1-5 rating direction, which would fold a zero and a one into the same score.
+     */
+    private Metric activitySatisfaction(List<UnionActivity> rows) {
+        var scored = rows.stream().filter(item -> item.getUsefulnessScore() != null).toList();
+        if (scored.isEmpty()) {
+            return partial(null, BigDecimal.ZERO,
+                    "Chưa có chương trình nào trong kỳ ghi nhận điểm hữu ích.",
+                    refs("HOAT_DONG", rows, UnionActivity::getId, ignored -> false), false);
+        }
+        BigDecimal average = scored.stream().map(UnionActivity::getUsefulnessScore)
+                .reduce(BigDecimal.ZERO, BigDecimal::add).divide(BigDecimal.valueOf(scored.size()), MC);
+        return complete(average, USEFULNESS_SCALE_MAX,
+                "Điểm hữu ích trung bình " + KpiScoringPolicy.display(average, 2) + "/5 trên "
+                        + scored.size() + " chương trình có ghi nhận.",
+                refs("HOAT_DONG", scored, UnionActivity::getId, item -> true), false);
+    }
+
+    private Metric financeDocuments(UnitData data) {
+        List<FinanceEntry> rows = data.finance();
+        Predicate<FinanceEntry> hasDocuments = item -> item.getDocumentStatus() == DocumentStatus.COMPLETE
+                && data.financeWithFiles().contains(item.getId());
+        long complete = rows.stream().filter(hasDocuments).count();
+        return complete(BigDecimal.valueOf(complete), BigDecimal.valueOf(rows.size()),
+                complete + "/" + rows.size() + " giao dịch có trạng thái chứng từ đầy đủ và tệp đính kèm thật.",
+                refs("TAI_CHINH_CD", rows, FinanceEntry::getId, hasDocuments), false);
+    }
+
+    private Metric budgetCompliance(List<UnionActivity> rows) {
+        List<UnionActivity> budgeted = rows.stream().filter(item -> item.getPlannedBudget() != null
+                && item.getPlannedBudget().signum() > 0 && item.getActualCost() != null).toList();
+        Predicate<UnionActivity> withinBudget = item -> item.getActualCost().compareTo(item.getPlannedBudget()) <= 0;
+        long within = budgeted.stream().filter(withinBudget).count();
+        return complete(BigDecimal.valueOf(within), BigDecimal.valueOf(budgeted.size()),
+                within + "/" + budgeted.size() + " chương trình có ngân sách chi không vượt dự toán đã duyệt.",
+                refs("HOAT_DONG", budgeted, UnionActivity::getId, withinBudget), false);
     }
 
     private BigDecimal dataQualityRate(UnitData data) {
@@ -591,7 +1026,8 @@ public class GpgKpiEngine {
                 && item.getAmount().signum() >= 0 && item.getDocumentStatus() != null
                 && item.getReceiptStatus() != null && item.getHasImage() != null
                 && (item.getStatus() != WorkStatus.COMPLETED
-                || item.getDocumentStatus() == DocumentStatus.COMPLETE
+                || item.getCompletedAt() != null
+                && item.getDocumentStatus() == DocumentStatus.COMPLETE
                 && item.getReceiptStatus() == DocumentStatus.COMPLETE
                 && Boolean.TRUE.equals(item.getHasImage()))).count();
         valid += relevantCases.stream().filter(item -> present(item.getCaseCode()) && item.getReceivedDate() != null
@@ -615,192 +1051,6 @@ public class GpgKpiEngine {
 
     private boolean isMemberComplete(Member item) {
         return MemberSpecs.hasRequiredProfileFields(item);
-    }
-
-    private Metric memberChangeTimeliness(List<MemberChange> rows) {
-        Predicate<MemberChange> isTimely = item -> item.getEffectiveDate() != null && item.getCreatedAt() != null
-                && !item.getCreatedAt().atZone(BUSINESS_ZONE).toLocalDate().isAfter(item.getEffectiveDate().plusDays(5));
-        long timely = rows.stream().filter(isTimely).count();
-        return partial(BigDecimal.valueOf(timely), BigDecimal.valueOf(rows.size()),
-                "Có thời điểm phát sinh/ghi nhận nội bộ nhưng thiếu mẫu số biến động đối soát từ HR và lịch ngày làm việc.",
-                refs("DOAN_VIEN", rows, MemberChange::getId, isTimely), false);
-    }
-
-    private Metric reportTimeliness(UnionUnit unit, UnitData data) {
-        if (data.reportSla() == null) {
-            return partial(null, null, "Phiên bản KPI chưa có SLA REPORT_SUBMISSION.",
-                    refs("BAO_CAO_DINH_KY", data.reports(), MonthlyReport::getId, ignored -> false), false);
-        }
-        List<YearMonth> dueMonths = dueReportMonths(data);
-        List<MonthlyReport> invalidReports = data.reports().stream()
-                .filter(item -> item.getReportMonth() != null
-                        && dueMonths.contains(YearMonth.from(item.getReportMonth())))
-                .filter(item -> item.getSubmittedAt() == null).toList();
-        if (!invalidReports.isEmpty()) {
-            return failed(null, BigDecimal.valueOf(dueMonths.size()),
-                    invalidReports.size() + " báo cáo đã ở trạng thái nộp/duyệt nhưng thiếu submitted_at.",
-                    refs("BAO_CAO_DINH_KY", invalidReports, MonthlyReport::getId, ignored -> false), false);
-        }
-        Predicate<MonthlyReport> isOnTime = item -> {
-            if (item.getSubmittedAt() == null || item.getReportMonth() == null
-                    || (item.getStatus() != ReportStatus.SUBMITTED && item.getStatus() != ReportStatus.APPROVED)) return false;
-            YearMonth month = YearMonth.from(item.getReportMonth());
-            if (!dueMonths.contains(month)) return false;
-            LocalDate deadline = reportDeadline(month, data.reportSla(), data.calendarOverrides());
-            return !item.getSubmittedAt().atZone(BUSINESS_ZONE).toLocalDate().isAfter(deadline);
-        };
-        Map<YearMonth, MonthlyReport> reportsByMonth = data.reports().stream()
-                .filter(item -> item.getReportMonth() != null)
-                .collect(Collectors.toMap(item -> YearMonth.from(item.getReportMonth()), Function.identity(),
-                        (left, right) -> left.getUpdatedAt() != null && right.getUpdatedAt() != null
-                                && left.getUpdatedAt().isAfter(right.getUpdatedAt()) ? left : right));
-        long onTime = data.reports().stream().filter(isOnTime).count();
-        List<SourceRef> dueEvidence = dueMonths.stream().map(month -> {
-            MonthlyReport report = reportsByMonth.get(month);
-            if (report != null) {
-                return new SourceRef("BAO_CAO_DINH_KY", String.valueOf(report.getId()),
-                        "monthly-report", isOnTime.test(report), true);
-            }
-            return new SourceRef("BAO_CAO_DINH_KY", unit.getId() + ":" + month,
-                    "report-obligation", false, true);
-        }).toList();
-        return complete(BigDecimal.valueOf(onTime), BigDecimal.valueOf(dueMonths.size()),
-                onTime + "/" + dueMonths.size() + " báo cáo tháng được nộp trong SLA cấu hình.",
-                dueEvidence, false);
-    }
-
-    private Metric reportPlan(List<MonthlyReport> rows) {
-        Predicate<MonthlyReport> hasPlan = item -> present(item.getPlanNextMonth());
-        long complete = rows.stream().filter(hasPlan).count();
-        return partial(BigDecimal.valueOf(complete), BigDecimal.valueOf(rows.size()),
-                "Chỉ có kế hoạch kỳ sau dạng văn bản; thiếu mục tiêu, PIC, hạn, ngân sách và phê duyệt.",
-                refs("BAO_CAO_DINH_KY", rows, MonthlyReport::getId, hasPlan), false);
-    }
-
-    private Metric careOnTime(List<WelfareRecord> rows) {
-        Predicate<WelfareRecord> isOnTime = item -> item.getStatus() == WorkStatus.COMPLETED
-                && item.getDeadline() != null && item.getUpdatedAt() != null
-                && !item.getUpdatedAt().atZone(BUSINESS_ZONE).toLocalDate().isAfter(item.getDeadline());
-        long completed = rows.stream().filter(isOnTime).count();
-        return partial(BigDecimal.valueOf(completed), BigDecimal.valueOf(rows.size()),
-                "Thiếu quyết định đủ điều kiện và paid_at/beneficiary_received_at; updated_at không phải ngày nhận hỗ trợ.",
-                refs("CHAM_SOC_NLD", rows, WelfareRecord::getId, isOnTime), true);
-    }
-
-    private Metric careClosure(List<WelfareRecord> rows) {
-        Predicate<WelfareRecord> isClosed = item -> item.getStatus() == WorkStatus.COMPLETED
-                && item.getPolicyId() != null && item.getDocumentStatus() == DocumentStatus.COMPLETE
-                && item.getReceiptStatus() == DocumentStatus.COMPLETE && Boolean.TRUE.equals(item.getHasImage());
-        long closed = rows.stream().filter(isClosed).count();
-        return partial(BigDecimal.valueOf(closed), BigDecimal.valueOf(rows.size()),
-                "Có hồ sơ/chứng từ/biên nhận nhưng thiếu xác minh, paid_at và xác nhận NLĐ; trạng thái COMPLETED chưa chứng minh khép kín.",
-                refs("CHAM_SOC_NLD", rows, WelfareRecord::getId, isClosed), true);
-    }
-
-    private Metric careCompliance(List<WelfareRecord> rows) {
-        Predicate<WelfareRecord> isCompliant = item -> item.getPolicyId() != null && item.getAmount() != null
-                && item.getStandardAmount() != null && item.getAmount().compareTo(item.getStandardAmount()) == 0;
-        long compliant = rows.stream().filter(isCompliant).count();
-        return partial(BigDecimal.valueOf(compliant), BigDecimal.valueOf(rows.size()),
-                "So sánh được mức hỗ trợ nhưng điều kiện/đúng đối tượng chưa có kết quả kiểm tra cấu trúc.",
-                refs("CHAM_SOC_NLD", rows, WelfareRecord::getId, isCompliant), true);
-    }
-
-    private Metric grievanceAcknowledgement(List<LaborCase> rows) {
-        Predicate<LaborCase> acknowledgedProxy = item -> item.getCreatedAt() != null && item.getReceivedDate() != null
-                && !item.getCreatedAt().atZone(BUSINESS_ZONE).toLocalDate().isAfter(item.getReceivedDate().plusDays(1));
-        long proxy = rows.stream().filter(acknowledgedProxy).count();
-        return partial(BigDecimal.valueOf(proxy), BigDecimal.valueOf(rows.size()),
-                "created_at chỉ là thời điểm ghi sổ, không phải acknowledged_at; thiếu đối soát kênh tiếp nhận.",
-                refs("SO_KIEN_NGHI", rows, LaborCase::getId, acknowledgedProxy), true);
-    }
-
-    private Metric grievanceSla(List<LaborCase> rows) {
-        Predicate<LaborCase> completedOnTime = item -> item.getStatus() == CaseStatus.CLOSED
-                && item.getApprovedAt() != null && item.getDeadline() != null
-                && !item.getApprovedAt().atZone(BUSINESS_ZONE).toLocalDate().isAfter(item.getDeadline());
-        long onTime = rows.stream().filter(completedOnTime).count();
-        return partial(BigDecimal.valueOf(onTime), BigDecimal.valueOf(rows.size()),
-                "Có deadline/approved_at nhưng thiếu lịch SLA, lần tạm dừng và phê duyệt gia hạn.",
-                refs("SO_KIEN_NGHI", rows, LaborCase::getId, completedOnTime), true);
-    }
-
-    private Metric grievanceClosure(List<LaborCase> rows) {
-        Predicate<LaborCase> validClosure = this::isValidClosedCase;
-        long valid = rows.stream().filter(validClosure).count();
-        return partial(BigDecimal.valueOf(valid), BigDecimal.valueOf(rows.size()),
-                "Có kết quả, ngày phản hồi và phê duyệt đóng nhưng response_date hiện được tạo khi gửi duyệt; "
-                        + "chưa có xác nhận đã phản hồi NLĐ và người/ngày đóng độc lập.",
-                refs("SO_KIEN_NGHI", rows, LaborCase::getId, validClosure), true);
-    }
-
-    private boolean isValidClosedCase(LaborCase item) {
-        if (item.getReceivedDate() == null || !present(item.getResultText()) || item.getResponseDate() == null
-                || !present(item.getApprovedBy()) || item.getApprovedAt() == null) return false;
-        LocalDate approvedDate = item.getApprovedAt().atZone(BUSINESS_ZONE).toLocalDate();
-        return !item.getResponseDate().isBefore(item.getReceivedDate())
-                && !approvedDate.isBefore(item.getReceivedDate())
-                && !approvedDate.isBefore(item.getResponseDate());
-    }
-
-    private Metric activityCompletion(List<UnionActivity> rows) {
-        Predicate<UnionActivity> isCompleted = item -> item.getStatus() == ActivityStatus.COMPLETED;
-        long completed = rows.stream().filter(isCompleted).count();
-        return partial(BigDecimal.valueOf(completed), BigDecimal.valueOf(rows.size()),
-                "Thiếu phiên bản kế hoạch được duyệt trước và quyết định hủy hợp lệ để lập mẫu số chính thức.",
-                refs("HOAT_DONG", rows, UnionActivity::getId, isCompleted), false);
-    }
-
-    private Metric activityParticipation(List<UnionActivity> rows) {
-        long invited = rows.stream().mapToLong(item -> safeInt(item.getInvitedCount())).sum();
-        long participants = rows.stream().mapToLong(item -> safeInt(item.getParticipantCount())).sum();
-        return partial(BigDecimal.valueOf(participants), BigDecimal.valueOf(invited),
-                participants + "/" + invited + " lượt tham gia đã ghi nhận; thiếu dấu thời gian phê duyệt kế hoạch và checklist để xác nhận chương trình hợp lệ.",
-                refs("HOAT_DONG", rows, UnionActivity::getId,
-                        item -> safeInt(item.getParticipantCount()) > 0), false);
-    }
-
-    private Metric activityReport(List<UnionActivity> rows) {
-        Predicate<UnionActivity> validReport = item -> item.getStatus() == ActivityStatus.COMPLETED
-                && Boolean.TRUE.equals(item.getReportCompleted()) && item.getDocumentStatus() == DocumentStatus.COMPLETE;
-        long complete = rows.stream().filter(validReport).count();
-        return partial(BigDecimal.valueOf(complete), BigDecimal.valueOf(rows.size()),
-                "Kiểm tra được trạng thái báo cáo/chứng từ nhưng thiếu report_submitted_at để chấm SLA.",
-                refs("HOAT_DONG", rows, UnionActivity::getId, validReport), false);
-    }
-
-    private Metric activitySatisfaction(List<UnionActivity> rows) {
-        var scores = rows.stream().map(UnionActivity::getUsefulnessScore).filter(Objects::nonNull).toList();
-        BigDecimal average = scores.isEmpty() ? null
-                : scores.stream().reduce(BigDecimal.ZERO, BigDecimal::add).divide(BigDecimal.valueOf(scores.size()), MC);
-        return partial(average, BigDecimal.valueOf(scores.size()),
-                "usefulness_score là số tổng hợp nhập trên hoạt động; chưa có phản hồi gốc/token chống trùng.",
-                refs("HOAT_DONG", rows, UnionActivity::getId,
-                        item -> item.getUsefulnessScore() != null), false);
-    }
-
-    private Metric financeDocuments(List<FinanceEntry> rows) {
-        Predicate<FinanceEntry> hasDocuments = item -> item.getDocumentStatus() == DocumentStatus.COMPLETE;
-        long complete = rows.stream().filter(hasDocuments).count();
-        return partial(BigDecimal.valueOf(complete), BigDecimal.valueOf(rows.size()),
-                "Trạng thái COMPLETE chỉ phản ánh có tệp; thiếu loại chứng từ bắt buộc và kết quả kiểm tra/phê duyệt.",
-                refs("TAI_CHINH_CD", rows, FinanceEntry::getId, hasDocuments), false);
-    }
-
-    private Metric budgetCompliance(List<UnionActivity> rows) {
-        List<UnionActivity> budgeted = rows.stream().filter(item -> item.getPlannedBudget() != null
-                && item.getPlannedBudget().signum() > 0 && item.getActualCost() != null).toList();
-        Predicate<UnionActivity> withinBudget = item -> item.getActualCost().compareTo(item.getPlannedBudget()) <= 0;
-        long within = budgeted.stream().filter(withinBudget).count();
-        return partial(BigDecimal.valueOf(within), BigDecimal.valueOf(budgeted.size()),
-                "Ngân sách/chi thực tế nằm ở hoạt động; chưa liên kết giao dịch và phê duyệt điều chỉnh trước khi chi.",
-                refs("HOAT_DONG", budgeted, UnionActivity::getId, withinBudget), false);
-    }
-
-    private <T extends BaseEntity> Metric absentAware(List<T> rows, String explanation, String module,
-                                                       boolean sensitive) {
-        return partial(null, BigDecimal.valueOf(rows.size()), explanation,
-                refs(module, rows, this::entityId, ignored -> false), sensitive);
     }
 
     private Metric missing(String explanation) {
@@ -851,10 +1101,16 @@ public class GpgKpiEngine {
         for (SourceRef ref : metric.refs()) {
             boolean redacted = metric.sensitive() && !canViewSensitive;
             String visibleRecordId = redacted ? "REDACTED" : ref.recordId();
-            String url = redacted ? null : "/kpi/evidence/" + ref.resourceType() + "/" + ref.recordId();
+            String url = redacted ? null : "/kpi/evidence/" + ref.resourceType() + "/"
+                    + ("population".equals(ref.resourceType()) ? ref.recordId().split(":")[0] : ref.recordId());
             ValidationStatus validationStatus = metric.complete() || metric.failedValidation()
                     ? (ref.structurallyValid() ? ValidationStatus.VALID : ValidationStatus.INVALID)
                     : ValidationStatus.PENDING;
+            if (ref.roleOverride() != null) {
+                result.add(new Evidence(resultId + ":R:" + sequence++, resultId, ref.module(), visibleRecordId,
+                        ref.roleOverride(), url, null, validationStatus, redacted));
+                continue;
+            }
             result.add(new Evidence(resultId + ":D:" + sequence++, resultId, ref.module(), visibleRecordId,
                     EvidenceRole.DENOMINATOR, url, null, validationStatus, redacted));
             if (ref.numerator()) {
@@ -888,8 +1144,8 @@ public class GpgKpiEngine {
         }
         data.overdueWelfareForWarning().forEach(item -> result.add(new Warning("OVERDUE_CARE",
                 WarningSeverity.WARNING,
-                "Hồ sơ chăm lo quá hạn và chưa hoàn tất; dữ liệu hiện tại chưa đủ xác định mức nghiêm trọng/đủ điều kiện.",
-                "Hoàn tất xác minh, hỗ trợ và xác nhận NLĐ; bổ sung kết quả kiểm tra điều kiện.",
+                "Hồ sơ chăm lo quá hạn và chưa hoàn tất.",
+                "Hoàn tất xác minh, hỗ trợ và cập nhật mốc hoàn thành.",
                 item.getDeadline(), "CHAM_SOC_NLD", null, true)));
         appliedAdjustments.forEach(item -> {
             boolean bonus = "BONUS".equals(item.getAdjustmentType());
@@ -995,7 +1251,7 @@ public class GpgKpiEngine {
     }
 
     private int missingMandatoryReports(UnitData data) {
-        if (data.reportSla() == null) return 0;
+        if (data.slaRule(REPORT_SLA) == null) return 0;
         Set<YearMonth> submitted = data.reports().stream()
                 .filter(item -> item.getStatus() == ReportStatus.SUBMITTED || item.getStatus() == ReportStatus.APPROVED)
                 .filter(item -> item.getSubmittedAt() != null)
@@ -1004,32 +1260,44 @@ public class GpgKpiEngine {
     }
 
     private List<YearMonth> dueReportMonths(UnitData data) {
-        if (data.reportSla() == null) return List.of();
+        SlaRule rule = data.slaRule(REPORT_SLA);
+        if (rule == null) return List.of();
         YearMonth cursor = YearMonth.from(data.period().periodStart());
         YearMonth last = YearMonth.from(data.period().periodEnd());
         List<YearMonth> due = new ArrayList<>();
         while (!cursor.isAfter(last)) {
-            if (!reportDeadline(cursor, data.reportSla(), data.calendarOverrides()).isAfter(data.asOf())) due.add(cursor);
+            if (!reportDeadline(cursor, rule, data.calendarOverrides()).isAfter(data.asOf())) due.add(cursor);
             cursor = cursor.plusMonths(1);
         }
         return List.copyOf(due);
     }
 
     static LocalDate reportDeadline(YearMonth month, SlaRule rule, Map<LocalDate, Boolean> overrides) {
-        LocalDate date = month.atEndOfMonth();
-        if (!"BUSINESS_DAY".equals(rule.getDurationUnit())) return date.plusDays(rule.getDurationValue());
+        return slaDeadline(month.atEndOfMonth(), rule, overrides);
+    }
+
+    /**
+     * Deadline for an SLA anchored on a business date. Business days skip weekends unless the approved
+     * calendar says otherwise, so a missing holiday row silently makes the deadline earlier than reality.
+     */
+    static LocalDate slaDeadline(LocalDate anchor, SlaRule rule, Map<LocalDate, Boolean> overrides) {
+        if (!"BUSINESS_DAY".equals(rule.getDurationUnit())) return anchor.plusDays(rule.getDurationValue());
+        LocalDate date = anchor;
         int remaining = rule.getDurationValue();
         while (remaining > 0) {
             date = date.plusDays(1);
-            Boolean override = overrides.get(date);
-            boolean working = override != null ? override
-                    : date.getDayOfWeek() != DayOfWeek.SATURDAY && date.getDayOfWeek() != DayOfWeek.SUNDAY;
-            if (working) remaining--;
+            if (isWorkingDay(date, overrides)) remaining--;
         }
         return date;
     }
 
-    private Summary summarize(List<UnitResult> results) {
+    private static boolean isWorkingDay(LocalDate date, Map<LocalDate, Boolean> overrides) {
+        Boolean override = overrides.get(date);
+        return override != null ? override
+                : date.getDayOfWeek() != DayOfWeek.SATURDAY && date.getDayOfWeek() != DayOfWeek.SUNDAY;
+    }
+
+    private Summary summarize(List<UnitResult> results, KpiVersion version) {
         BigDecimal average = results.isEmpty() ? BigDecimal.ZERO : results.stream().map(UnitResult::finalScore)
                 .reduce(BigDecimal.ZERO, BigDecimal::add).divide(BigDecimal.valueOf(results.size()), MC);
         int finalUnits = (int) results.stream().filter(item -> item.runStatus() == RunStatus.FINAL).count();
@@ -1038,7 +1306,20 @@ public class GpgKpiEngine {
                 .filter(item -> "Xuất sắc".equals(item.finalClassification())).count();
         int attention = (int) results.stream().filter(item -> "Trung bình".equals(item.finalClassification())
                 || "Không đạt".equals(item.finalClassification())).count();
-        return new Summary(average, finalUnits, provisional, excellent, attention);
+        int lockEligible = (int) results.stream()
+                .filter(item -> lockEligible(item, version.getDataQualityFinalThreshold())).count();
+        return new Summary(average, finalUnits, provisional, excellent, attention, lockEligible);
+    }
+
+    /**
+     * Whether a live result may be locked as an official {@code FINAL} run. A unit still carrying missing or
+     * failed KPIs is never official, no matter how high its provisional score looks.
+     */
+    public static boolean lockEligible(UnitResult result, BigDecimal dataQualityThreshold) {
+        return result.dataQualityRate() != null && dataQualityThreshold != null
+                && result.dataQualityRate().compareTo(dataQualityThreshold) >= 0
+                && result.details().stream().noneMatch(item -> item.resultStatus() == ResultStatus.MISSING_DATA
+                || item.resultStatus() == ResultStatus.FAILED_VALIDATION);
     }
 
     static Comparator<UnitResult> rankingComparator() {
@@ -1088,7 +1369,16 @@ public class GpgKpiEngine {
         return left == null ? right == null : right != null && left.compareTo(right) == 0;
     }
 
-    private static UnitResult copyRank(UnitResult item, Integer rank, boolean tied) {
+    /** The same result promoted to an official run; only a period lock may do this. */
+    public static UnitResult asFinal(UnitResult item) {
+        return new UnitResult(item.runId(), item.unionUnitId(), item.unionUnitCode(), item.unionUnitName(),
+                item.activeMemberCount(), RunStatus.FINAL, item.dataQualityRate(), item.baseScore(),
+                item.bonusPoints(), item.penaltyPoints(), item.finalScore(), item.rawClassification(),
+                item.finalClassification(), item.rank(), item.tied(), item.reportOnTimeRate(), item.groups(),
+                item.details(), item.warnings(), item.adjustments());
+    }
+
+    static UnitResult copyRank(UnitResult item, Integer rank, boolean tied) {
         return new UnitResult(item.runId(), item.unionUnitId(), item.unionUnitCode(), item.unionUnitName(),
                 item.activeMemberCount(), item.runStatus(), item.dataQualityRate(), item.baseScore(),
                 item.bonusPoints(), item.penaltyPoints(), item.finalScore(), item.rawClassification(),
@@ -1114,7 +1404,7 @@ public class GpgKpiEngine {
     }
 
     private static String exclusionKey(String module, String key) {
-        return module + "\u0000" + key;
+        return module + EXCLUSION_SEPARATOR + key;
     }
 
     private boolean present(String value) {
@@ -1133,24 +1423,9 @@ public class GpgKpiEngine {
         return value ? BigDecimal.ONE : BigDecimal.ZERO;
     }
 
-    private Long entityId(BaseEntity entity) {
-        if (entity instanceof WelfareRecord item) return item.getId();
-        if (entity instanceof LaborCase item) return item.getId();
-        if (entity instanceof UnionActivity item) return item.getId();
-        if (entity instanceof FinanceEntry item) return item.getId();
-        if (entity instanceof Member item) return item.getId();
-        if (entity instanceof MemberChange item) return item.getId();
-        if (entity instanceof MonthlyReport item) return item.getId();
-        throw new IllegalArgumentException("Loại nguồn KPI chưa được ánh xạ ID: " + entity.getClass().getName());
-    }
-
-    private List<SourceRef> refs(String module, Long id) {
-        return id == null ? List.of() : List.of(new SourceRef(module, String.valueOf(id), "union-unit", true, true));
-    }
-
-    private <T> List<SourceRef> refs(String module, List<T> rows, Function<T, Long> id) {
-        return rows.stream().map(item -> new SourceRef(module, String.valueOf(id.apply(item)),
-                resourceType(item), true, true)).toList();
+    private List<SourceRef> refs(String module, Long id, boolean valid) {
+        return id == null ? List.of()
+                : List.of(new SourceRef(module, String.valueOf(id), "union-unit", valid, valid));
     }
 
     private <T> List<SourceRef> refs(String module, List<T> rows, Function<T, Long> id,
@@ -1171,27 +1446,68 @@ public class GpgKpiEngine {
     }
 
     private record SourceRef(String module, String recordId, String resourceType, boolean numerator,
-                             boolean structurallyValid) {
+                             boolean structurallyValid, EvidenceRole roleOverride) {
+        SourceRef(String module, String recordId, String resourceType, boolean numerator, boolean structurallyValid) {
+            this(module, recordId, resourceType, numerator, structurallyValid, null);
+        }
     }
 
     private record Metric(BigDecimal numerator, BigDecimal denominator, boolean complete, boolean failedValidation,
                           String explanation, List<SourceRef> refs, boolean sensitive) {
     }
 
-    private record UnitData(List<Member> members, List<MemberChange> memberChanges,
+    private record UnitData(List<Member> employees, List<MemberChange> memberChanges,
                             List<MonthlyReport> reports, List<WelfareRecord> welfare,
                             List<LaborCase> cases, List<UnionActivity> activities,
-                            List<FinanceEntry> finance, Instant cutoff, Period period, SlaRule reportSla,
-                            Map<LocalDate, Boolean> calendarOverrides, boolean governanceSourceExcluded) {
+                            List<FinanceEntry> finance, Set<Long> welfareWithFiles,
+                            Set<Long> activitiesWithMedia, Set<Long> financeWithFiles,
+                            Set<Long> careWithFinanceEntry, Instant cutoff, Period period,
+                            Map<String, SlaRule> slaRules, Map<LocalDate, Boolean> calendarOverrides,
+                            boolean governanceSourceExcluded) {
+        SlaRule slaRule(String slaCode) {
+            return slaRules.get(slaCode);
+        }
+
+        /** Union members only: the roster in {@code employees} also carries the workers who have not joined. */
+        List<Member> members() {
+            return employees.stream()
+                    .filter(item -> item.getMembershipStatus() == MembershipStatus.MEMBER)
+                    .filter(item -> item.getJoinDate() == null || !item.getJoinDate().isAfter(periodAsOf()))
+                    .toList();
+        }
+
         List<WelfareRecord> periodWelfare() {
             return welfare.stream().filter(item -> !item.getEventDate().isBefore(period.periodStart())
                     && !item.getEventDate().isAfter(periodAsOf())).toList();
+        }
+
+        List<WelfareRecord> dueWelfare() {
+            return periodWelfare().stream().filter(item -> item.getDeadline() != null)
+                    .filter(item -> !item.getDeadline().isAfter(periodAsOf())).toList();
+        }
+
+        List<WelfareRecord> completedWelfare() {
+            return periodWelfare().stream().filter(item -> item.getStatus() == WorkStatus.COMPLETED).toList();
+        }
+
+        List<WelfareRecord> policyWelfare() {
+            return periodWelfare().stream().filter(item -> item.getPolicyId() != null).toList();
+        }
+
+        /** Care that passed approval, so a matching finance entry must exist. */
+        List<WelfareRecord> approvedWelfare() {
+            return periodWelfare().stream().filter(item -> item.getStatus() == WorkStatus.IN_PROGRESS
+                    || item.getStatus() == WorkStatus.COMPLETED).toList();
         }
 
         List<WelfareRecord> overdueWelfareForWarning() {
             return welfare.stream().filter(item -> item.getDeadline() != null
                     && item.getDeadline().isBefore(periodAsOf())
                     && item.getStatus() != WorkStatus.COMPLETED).toList();
+        }
+
+        List<UnionActivity> completedActivities() {
+            return activities.stream().filter(item -> item.getStatus() == ActivityStatus.COMPLETED).toList();
         }
 
         List<LaborCase> periodCases(Period period) {

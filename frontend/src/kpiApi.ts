@@ -7,7 +7,7 @@ import type {
   KpiMetadataView,
 } from './kpiModel'
 
-const KPI_EVIDENCE_PATH = /^\/kpi\/evidence\/(?:union-unit|member|member-change|monthly-report|report-obligation|welfare|labor-case|activity|finance-entry|no-occurrence)\/[A-Za-z0-9:_-]+$/
+const KPI_EVIDENCE_PATH = /^\/kpi\/evidence\/(?:union-unit|member|member-change|monthly-report|report-obligation|welfare|labor-case|activity|finance-entry|no-occurrence|population)\/[A-Za-z0-9:_-]+$/
 const KPI_ATTACHMENT_PATH = /^\/(?:member-documents|welfare-documents|case-documents|activity-media|finance-documents)\/\d+\/download$/
 
 function apiRelativePath(path: string): string {
