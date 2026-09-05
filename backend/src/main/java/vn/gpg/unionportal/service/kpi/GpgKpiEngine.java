@@ -71,6 +71,21 @@ public class GpgKpiEngine {
             "ACT01", "ACT02", "ACT03", "ACT04",
             "FIN01", "FIN02", "FIN03");
 
+    /**
+     * Catalog per version id; a version absent from this map uses {@link #EXPECTED_CODES}. Every code listed
+     * here must have a branch in {@code metric(...)}, otherwise the KPI only ever yields {@code MISSING_DATA}
+     * and drags the unit score down. That is why adding a KPI is a migration plus a calculator plus an entry
+     * here, and never a configuration-only change.
+     */
+    private static final Map<String, Set<String>> VERSION_CATALOGS = Map.of(
+            "GPG-CD-KPI-V3", withCodes(EXPECTED_CODES, "CARE05"));
+
+    private static Set<String> withCodes(Set<String> base, String... extra) {
+        Set<String> codes = new TreeSet<>(base);
+        codes.addAll(List.of(extra));
+        return Set.copyOf(codes);
+    }
+
     private final UnionUnitRepository units;
     private final MemberRepository members;
     private final MemberChangeRepository memberChanges;
@@ -250,7 +265,11 @@ public class GpgKpiEngine {
             throw new IllegalArgumentException("Không có một phiên bản KPI bao phủ toàn bộ kỳ đã chọn");
         }
         if (matching.size() > 1) {
-            throw new IllegalStateException("Nhiều phiên bản KPI đang chồng lấn toàn bộ kỳ đã chọn");
+            throw new IllegalStateException("Nhiều phiên bản KPI chồng lấn trên kỳ "
+                    + period.periodStart() + " → " + period.periodEnd() + ": "
+                    + matching.stream().map(KpiVersion::getVersionId).sorted().toList()
+                    + ". Chỉ được để đúng một phiên bản ACTIVE hoặc RETIRED bao phủ kỳ này; "
+                    + "hãy đặt effective_to cho các phiên bản đã thay thế.");
         }
         return matching.getFirst();
     }
@@ -289,7 +308,18 @@ public class GpgKpiEngine {
     }
 
     private void validateCatalog(List<KpiDefinition> configured) {
-        Set<String> actual = configured.stream().map(KpiDefinition::getKpiCode).collect(Collectors.toSet());
+        TreeSet<String> versionIds = configured.stream().map(KpiDefinition::getVersionId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(TreeSet::new));
+        if (versionIds.size() > 1) {
+            throw new IllegalStateException("Danh mục KPI phải thuộc đúng một phiên bản, đang có: " + versionIds);
+        }
+        // No version id at all means the caller handed over a bare catalog; score it against the base set
+        // rather than failing on a NullPointerException from the sorted collector.
+        String versionId = versionIds.isEmpty() ? "" : versionIds.first();
+        Set<String> expected = expectedCodes(versionId);
+        Set<String> actual = configured.stream().map(KpiDefinition::getKpiCode)
+                .collect(Collectors.toCollection(TreeSet::new));
         BigDecimal totalWeight = configured.stream().map(KpiDefinition::getWeight)
                 .filter(Objects::nonNull).reduce(BigDecimal.ZERO, BigDecimal::add);
         boolean invalidDefinition = configured.stream().anyMatch(item -> item.getWeight() == null
@@ -302,13 +332,48 @@ public class GpgKpiEngine {
                         BigDecimal::add)));
         boolean invalidGroupWeight = !groupWeights.keySet().equals(Set.copyOf(GROUP_ORDER))
                 || groupWeights.values().stream().anyMatch(weight -> weight.signum() <= 0);
-        Set<String> expected = new HashSet<>(EXPECTED_CODES);
-        if (configured.stream().anyMatch(d -> "GPG-CD-KPI-V3".equals(d.getVersionId()))) expected.add("CARE05");
         if (configured.size() != expected.size() || !actual.equals(expected)
                 || invalidDefinition || invalidGroupWeight || totalWeight.compareTo(BigDecimal.valueOf(100)) != 0) {
-            throw new IllegalStateException("Phiên bản KPI phải có đúng " + EXPECTED_CODES.size()
-                    + " mã theo đặc tả GPG");
+            throw new IllegalStateException(catalogFailure(versionId, expected, actual, configured.size(),
+                    totalWeight, invalidDefinition, invalidGroupWeight, groupWeights));
         }
+    }
+
+    /** Codes the engine can actually score for {@code versionId}; see {@link #VERSION_CATALOGS}. */
+    private static Set<String> expectedCodes(String versionId) {
+        return VERSION_CATALOGS.getOrDefault(versionId, EXPECTED_CODES);
+    }
+
+    /** Names exactly what is wrong so an operator can repair the catalog without reading the engine source. */
+    private static String catalogFailure(String versionId, Set<String> expected, Set<String> actual,
+                                        int configuredSize, BigDecimal totalWeight, boolean invalidDefinition,
+                                        boolean invalidGroupWeight, Map<String, BigDecimal> groupWeights) {
+        List<String> problems = new ArrayList<>();
+        if (configuredSize != expected.size()) {
+            problems.add("phải có đúng " + expected.size() + " mã, đang có " + configuredSize);
+        }
+        Set<String> missing = new TreeSet<>(expected);
+        missing.removeAll(actual);
+        if (!missing.isEmpty()) problems.add("thiếu mã " + missing);
+        Set<String> unknown = new TreeSet<>(actual);
+        unknown.removeAll(expected);
+        if (!unknown.isEmpty()) problems.add("mã chưa có calculator " + unknown);
+        if (invalidDefinition) {
+            problems.add("có định nghĩa sai trọng số, nhóm, chiều hoặc ngưỡng, hoặc thiếu quy tắc nguồn");
+        }
+        if (invalidGroupWeight) {
+            Set<String> missingGroups = new TreeSet<>(GROUP_ORDER);
+            missingGroups.removeAll(groupWeights.keySet());
+            problems.add(missingGroups.isEmpty()
+                    ? "có nhóm KPI mang trọng số không dương"
+                    : "thiếu nhóm KPI " + missingGroups);
+        }
+        if (totalWeight.compareTo(BigDecimal.valueOf(100)) != 0) {
+            problems.add("tổng trọng số phải bằng 100, đang là "
+                    + totalWeight.stripTrailingZeros().toPlainString());
+        }
+        String label = versionId == null || versionId.isBlank() ? "(chưa khai báo)" : versionId;
+        return "Danh mục KPI của phiên bản " + label + " không hợp lệ: " + String.join("; ", problems);
     }
 
     private boolean invalidTarget(KpiDefinition definition) {

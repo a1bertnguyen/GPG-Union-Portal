@@ -45,12 +45,17 @@ class MemberExcelServiceTests {
             assertThat(sheet.getLastRowNum()).isGreaterThanOrEqualTo(1);
             for (int rowIndex = 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
                 var row = sheet.getRow(rowIndex);
-                // Mirrors MemberSpecs.REQUIRED_FIELDS: jobTitle(7), workplace(4), joinDate(18), email(20), phone(17).
-                boolean missing = row.getCell(7).getStringCellValue().isBlank()
+                // All seven columns of MemberSpecs.REQUIRED_FIELDS, in export order: company(3),
+                // workplace(4), jobTitle(7), phone(17), joinDate(18), startWorkDate(19), email(20).
+                // Leaving company and startWorkDate out — as this test once did — makes it fail for a row
+                // that the "missing" preset correctly returned.
+                boolean missing = row.getCell(3).getStringCellValue().isBlank()
                         || row.getCell(4).getStringCellValue().isBlank()
+                        || row.getCell(7).getStringCellValue().isBlank()
+                        || row.getCell(17).getStringCellValue().isBlank()
                         || row.getCell(18) == null || row.getCell(18).getCellType() == CellType.BLANK
-                        || row.getCell(20).getStringCellValue().isBlank()
-                        || row.getCell(17).getStringCellValue().isBlank();
+                        || row.getCell(19) == null || row.getCell(19).getCellType() == CellType.BLANK
+                        || row.getCell(20).getStringCellValue().isBlank();
                 assertThat(missing).as("row %s", rowIndex + 1).isTrue();
             }
         }

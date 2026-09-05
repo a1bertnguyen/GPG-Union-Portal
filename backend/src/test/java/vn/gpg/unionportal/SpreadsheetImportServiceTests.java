@@ -135,7 +135,12 @@ class SpreadsheetImportServiceTests {
         assertThat(result.errors()).isEmpty();
         var imported = welfareRepository.findByRecordCodeIgnoreCase("XLS-LEGACY-WELFARE").orElseThrow();
         assertThat(imported.getPolicyId()).isNull();
+        // These three columns exist only in the retired template, so nothing but welfareHeaderAlias can map
+        // them. "Loại chăm lo" pins the lower-case alias keys RowValues.cell() looks up, and "Định mức" pins
+        // the đ fold in normalizeHeader — NFD leaves đ alone, so "dinh muc" never matched the real header.
+        assertThat(imported.getWelfareType()).isEqualTo(WelfareType.VISIT);
         assertThat(imported.getPolicyName()).isEqualTo("Chăm lo cũ");
+        assertThat(imported.getStandardAmount()).isEqualByComparingTo("200000");
         assertThat(imported.getAmount()).isEqualByComparingTo("250000");
     }
 

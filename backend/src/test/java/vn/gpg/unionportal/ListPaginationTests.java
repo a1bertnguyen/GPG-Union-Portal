@@ -11,12 +11,15 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.transaction.annotation.Transactional;
 import vn.gpg.unionportal.dto.ListQuery;
 import vn.gpg.unionportal.model.Member;
+import vn.gpg.unionportal.repository.MemberRepository;
 import vn.gpg.unionportal.repository.UnionUnitRepository;
 import vn.gpg.unionportal.service.LaborCaseService;
 import vn.gpg.unionportal.service.MemberService;
+import vn.gpg.unionportal.spec.MemberSpecs;
 import vn.gpg.unionportal.service.WelfareService;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -34,6 +37,7 @@ class ListPaginationTests {
     @Autowired private WelfareService welfare;
     @Autowired private LaborCaseService cases;
     @Autowired private UnionUnitRepository units;
+    @Autowired private MemberRepository memberRepository;
 
     @AfterEach
     void clearAuthentication() {
@@ -101,16 +105,29 @@ class ListPaginationTests {
         var missing = members.search(preset("missing"));
 
         assertThat(missing).isNotEmpty();
-        assertThat(missing).allMatch(member -> member.getJobTitle() == null || member.getJobTitle().isBlank()
-                || member.getWorkplace() == null || member.getWorkplace().isBlank()
-                || member.getJoinDate() == null
-                || member.getEmail() == null || member.getEmail().isBlank()
-                || member.getPhone() == null || member.getPhone().isBlank());
+        // Asserted through the production contract on purpose. The hand-copied field list this test used
+        // before silently drifted the moment MemberSpecs.REQUIRED_FIELDS gained company and startWorkDate,
+        // and the test then failed for a member whose profile really was incomplete.
+        assertThat(missing).noneMatch(MemberSpecs::hasRequiredProfileFields);
 
-        var complete = members.search(ListQuery.firstPage()).stream()
-                .filter(member -> !missing.contains(member))
-                .toList();
-        assertThat(complete).allMatch(member -> member.getJoinDate() != null && member.getEmail() != null);
+        // The demo seed leaves every member short of at least one required field, so the complement of the
+        // preset is empty and asserting over it proves nothing. Complete one profile to exercise the boundary
+        // in both directions: a fully filled member must drop out of the preset.
+        var candidate = missing.getFirst();
+        candidate.setCompany("Công ty kiểm thử");
+        candidate.setJobTitle("Nhân viên kiểm thử");
+        candidate.setWorkplace("Xưởng kiểm thử");
+        candidate.setPhone("0900000001");
+        candidate.setEmail("kiem.thu@example.com");
+        candidate.setJoinDate(LocalDate.of(2026, 1, 2));
+        candidate.setStartWorkDate(LocalDate.of(2025, 1, 2));
+        memberRepository.saveAndFlush(candidate);
+        assertThat(MemberSpecs.hasRequiredProfileFields(candidate)).isTrue();
+
+        var stillMissing = members.search(preset("missing"));
+        assertThat(stillMissing).doesNotContain(candidate);
+        assertThat(stillMissing).noneMatch(MemberSpecs::hasRequiredProfileFields);
+        assertThat(members.search(ListQuery.firstPage())).contains(candidate);
     }
 
     @Test

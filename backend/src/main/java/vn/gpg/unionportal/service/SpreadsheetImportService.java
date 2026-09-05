@@ -599,12 +599,23 @@ public class SpreadsheetImportService {
                 && !headers.containsKey("policycode"));
     }
 
-    private String caseHeaderAlias(String header) {
-        String normalized = Normalizer.normalize(header, Normalizer.Form.NFD)
+    /**
+     * Header key for the alias tables: strip combining marks, fold đ/Đ to d, collapse whitespace, lower case.
+     *
+     * <p>NFD does not decompose U+0111 đ or U+0110 Đ, so stripping combining marks alone leaves them in
+     * place. Folding them explicitly is what makes "Định mức" and "Điện thoại" resolve; without it those
+     * alias entries never matched any header and the column was silently read as empty.
+     */
+    private static String normalizeHeader(String header) {
+        String stripped = Normalizer.normalize(header, Normalizer.Form.NFD)
                 .replaceAll("\\p{M}", "")
-                .trim()
-                .toLowerCase(Locale.ROOT)
-                .replaceAll("\\s+", " ");
+                .replace('đ', 'd')
+                .replace('Đ', 'D');
+        return stripped.trim().toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
+    }
+
+    private String caseHeaderAlias(String header) {
+        String normalized = normalizeHeader(header);
         return switch (normalized) {
             case "manv", "ma nv", "ma nhan vien" -> "employeecode";
             case "ho va ten", "ho ten" -> "requestername";
@@ -621,17 +632,16 @@ public class SpreadsheetImportService {
     }
 
     private String welfareHeaderAlias(String header) {
-        String normalized = Normalizer.normalize(header, Normalizer.Form.NFD)
-                .replaceAll("\\p{M}", "")
-                .trim()
-                .toLowerCase(Locale.ROOT)
-                .replaceAll("\\s+", " ");
+        String normalized = normalizeHeader(header);
+        // Keys must be lower case: readHeaders stores whatever this returns verbatim, and RowValues.cell()
+        // looks the column up with name.toLowerCase(). Returning camelCase here left the aliases dead, so a
+        // legacy workbook lost its welfare type, policy name and standard amount.
         return switch (normalized) {
-            case "ten chinh sach / dinh muc ap dung", "ten chinh sach" -> "policyName";
-            case "loai cham lo" -> "welfareType";
+            case "ten chinh sach / dinh muc ap dung", "ten chinh sach" -> "policyname";
+            case "loai cham lo" -> "welfaretype";
             case "han hoan tat" -> "deadline";
             case "so tien" -> "amount";
-            case "dinh muc" -> "standardAmount";
+            case "dinh muc" -> "standardamount";
             default -> null;
         };
     }
@@ -934,7 +944,7 @@ public class SpreadsheetImportService {
                 e("employmentStatus", "Trạng thái nhân sự", true, "ACTIVE", "INACTIVE"))),
         WELFARE("welfare", "chăm lo", "mau-cham-lo.xlsx", IntegrationType.WELFARE_IMPORT, false, List.of(
                 c("recordCode", "Mã hồ sơ, khóa cập nhật", true, 20),
-                c("policyCode", "Chính sách chăm lo, chọn từ danh mục", true, 44), c("unitCode", "Mã CĐCS", true, 18), c("beneficiaryName", "Người thụ hưởng", true, 28),
+                c("policyCode", "Chính sách chăm lo, chọn từ danh mục", false, 44), c("unitCode", "Mã CĐCS", true, 18), c("beneficiaryName", "Người thụ hưởng", true, 28),
                 d("eventDate", "Ngày sự kiện", true), e("status", "Trạng thái xử lý", true, "NEW", "PENDING_APPROVAL", "IN_PROGRESS", "COMPLETED", "CANCELLED"),
                 n("amount", "Số tiền thực tế, để trống dùng định mức", false), e("documentStatus", "Tình trạng hồ sơ", true, "COMPLETE", "INCOMPLETE", "NOT_REQUIRED"),
                 e("receiptStatus", "Tình trạng biên nhận", false, "COMPLETE", "INCOMPLETE", "NOT_REQUIRED"), e("hasImage", "Có hình ảnh", false, "TRUE", "FALSE"),

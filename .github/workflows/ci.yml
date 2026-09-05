@@ -1,0 +1,138 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-h2:
+    name: Backend — H2 (MODE=MySQL)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # backend/mvnw is committed with mode 100644 on Windows checkouts, so make sure it can run here.
+      - name: Make the Maven wrapper executable
+        run: chmod +x backend/mvnw
+
+      - name: mvnw test
+        working-directory: backend
+        run: ./mvnw -B --no-transfer-progress test
+
+      - name: Upload surefire reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-h2
+          path: backend/target/surefire-reports/
+          if-no-files-found: ignore
+
+  backend-mysql:
+    name: Backend — MySQL 8.4
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # Started as a plain container rather than a service container: the suite needs mysqld's own
+      # --default-time-zone pinned to +07:00 (Asia/Bangkok), and `services:` can only pass docker options,
+      # not mysqld arguments. Periods, SLA working-day counts and CURRENT_TIMESTAMP defaults all resolve in
+      # that zone, so a UTC server would shift dates by seven hours.
+      - name: Start MySQL 8.4
+        run: |
+          docker run -d --name ci-mysql \
+            -e MYSQL_ROOT_PASSWORD=ci-root-pw \
+            -e MYSQL_DATABASE=union_portal_test \
+            -p 3306:3306 \
+            mysql:8.4 \
+            --character-set-server=utf8mb4 \
+            --collation-server=utf8mb4_unicode_ci \
+            --default-time-zone=+07:00
+
+      - name: Wait for MySQL
+        run: |
+          for attempt in $(seq 1 60); do
+            if docker exec ci-mysql mysqladmin ping -h 127.0.0.1 -uroot -pci-root-pw --silent 2>/dev/null; then
+              echo "MySQL ready after ${attempt}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "MySQL did not become ready in time"; docker logs ci-mysql; exit 1
+
+      - name: Make the Maven wrapper executable
+        run: chmod +x backend/mvnw
+
+      # The whole Flyway chain runs against real MySQL here. V16__add_activity_program_reports.sql uses
+      # MySQL DELIMITER blocks that H2 does not exercise faithfully, so the H2 job alone cannot prove the
+      # migrations apply in production.
+      - name: mvnw test on real MySQL
+        working-directory: backend
+        env:
+          SPRING_PROFILES_ACTIVE: mysql
+          DB_URL: jdbc:mysql://127.0.0.1:3306/union_portal_test?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Bangkok&allowPublicKeyRetrieval=true&useSSL=false
+          DB_USERNAME: root
+          DB_PASSWORD: ci-root-pw
+        run: ./mvnw -B --no-transfer-progress test
+
+      - name: Flyway history and KPI version windows
+        if: always()
+        run: |
+          docker exec ci-mysql mysql -uroot -pci-root-pw union_portal_test -e "
+            SELECT version, description, success FROM flyway_schema_history ORDER BY installed_rank;
+            SELECT version_id, effective_from, effective_to, status FROM kpi_versions ORDER BY version_id;
+          " || true
+
+      - name: Upload surefire reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-mysql
+          path: backend/target/surefire-reports/
+          if-no-files-found: ignore
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm ci
+        working-directory: frontend
+        run: npm ci
+
+      - name: oxlint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: node --test
+        working-directory: frontend
+        run: npm test
+
+      # `npm run build` also runs scripts/audit-bundle.mjs, which fails the build on published source maps
+      # or any jdbc:, DB_PASSWORD, JWT_SECRET or private-key pattern that reaches dist/.
+      - name: Build and audit the bundle
+        working-directory: frontend
+        run: npm run build
